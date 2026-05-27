@@ -1,0 +1,30 @@
+
+> excelsior@0.1.0 test
+> vitest run packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts
+
+
+[1m[46m RUN [49m[22m [36mv3.2.4 [39m[90mC:/Users/Raphs/OneDrive/Área de Trabalho/Excelsior[39m
+
+ [32m✓[39m packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 16812[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mswitches tabs and adds sheets from the UI [33m 661[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mcommits edits from the formula bar to the selected cell [33m 430[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mshows validation feedback and blocks invalid formula bar commits [33m 579[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mexposes grid semantics and announces the active cell for assistive tech [33m 528[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mvalidates paste in batch before applying any cell update [33m 547[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mapplies conditional formatting styles to rendered cells [33m 330[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mrenders dropdown affordance and commits selection from list validation UI [33m 588[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mrenders checkbox affordance and toggles value on edit [33m 555[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mcommits value through a custom editor and preserves validation on failure [33m 824[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mskips hidden rows and columns during keyboard navigation and clipboard copy by default [33m 1262[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mfills numeric sequences vertically with batch operations from the fill handle [33m 977[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mcopies formulas with relative and absolute reference adjustments from the fill handle [33m 1233[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22msupports localization formatters, custom shortcuts and RTL horizontal navigation [33m 925[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mdoes not commit text editing while IME composition is active [33m 888[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mfinds matches in the current sheet with navigation and search options [33m 2729[2mms[22m[39m
+   [33m[2m✓[22m[39m DomSpreadsheetRenderer[2m > [22mreplaces the current match and replaces all workbook matches with undoable batch history [33m 3244[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m20 passed[39m[22m[90m (20)[39m
+[2m   Start at [22m 21:46:44
+[2m   Duration [22m 18.26s[2m (transform 244ms, setup 0ms, collect 336ms, tests 16.81s, environment 619ms, prepare 133ms)[22m
+

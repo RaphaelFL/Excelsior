@@ -1,0 +1,1 @@
+export const getCellKey = (row: number, col: number): string => `${row}:${col}`;

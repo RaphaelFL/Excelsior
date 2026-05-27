@@ -1,0 +1,11 @@
+{
+  "name": "@excelsior/styles",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.css"
+  },
+  "files": [
+    "src/index.css"
+  ]
+}

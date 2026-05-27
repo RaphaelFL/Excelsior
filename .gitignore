@@ -1,0 +1,22 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# AI tooling and prompt metadata
+.ia/
+.ai/
+.cursor/
+.windsurf/
+.roo/
+.cline/
+.copilot/
+
+# AI instruction and prompt files
+AGENTS.md
+copilot-instructions.md
+.github/copilot-instructions.md
+*.instructions.md
+*.prompt.md
+*.agent.md
