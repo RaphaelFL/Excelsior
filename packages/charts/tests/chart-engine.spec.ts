@@ -62,6 +62,115 @@ describe("createFigure", () => {
     container.remove();
   });
 
+  it("renders category axis ticks without duplicating labels", () => {
+    const container = document.createElement("div");
+    setContainerSize(container, 760, 320);
+    document.body.append(container);
+
+    const chart = createFigure(container, {
+      data: [
+        {
+          type: "bar",
+          name: "Valor",
+          x: ["Consultoria", "Licença"],
+          y: [1200, 800]
+        },
+        {
+          type: "bar",
+          name: "Imposto",
+          x: ["Consultoria", "Licença"],
+          y: [120, 96]
+        },
+        {
+          type: "bar",
+          name: "Total",
+          x: ["Consultoria", "Licença"],
+          y: [1320, 896]
+        }
+      ],
+      layout: {
+        xAxis: {
+          type: "category"
+        }
+      }
+    });
+
+    const axisTextValues = Array.from(container.querySelectorAll("text"))
+      .map((node) => node.textContent?.trim() ?? "")
+      .filter((value) => value.length > 0);
+    expect(axisTextValues.filter((value) => value === "Consultoria")).toHaveLength(1);
+    expect(axisTextValues.filter((value) => value === "Licença")).toHaveLength(1);
+
+    chart.destroy();
+    container.remove();
+  });
+
+  it("avoids overlapping y-axis labels for close values", () => {
+    const container = document.createElement("div");
+    setContainerSize(container, 780, 260);
+    document.body.append(container);
+
+    const chart = createFigure(container, {
+      data: [
+        {
+          type: "bar",
+          name: "Valor",
+          x: ["Consultoria", "Licença"],
+          y: [1200, 800]
+        },
+        {
+          type: "bar",
+          name: "Imposto",
+          x: ["Consultoria", "Licença"],
+          y: [120, 96]
+        },
+        {
+          type: "bar",
+          name: "Total",
+          x: ["Consultoria", "Licença"],
+          y: [1320, 896]
+        }
+      ],
+      layout: {
+        xAxis: {
+          type: "category"
+        }
+      }
+    });
+
+    const yLabels = Array.from(container.querySelectorAll<SVGTextElement>("text"))
+      .filter((node) => (node.getAttribute("text-anchor") ?? "") === "end")
+      .map((node) => ({
+        text: node.textContent?.trim() ?? "",
+        x: Number(node.getAttribute("x")),
+        y: Number(node.getAttribute("y"))
+      }))
+      .filter(
+        (entry) =>
+          Number.isFinite(entry.x) &&
+          Number.isFinite(entry.y) &&
+          entry.x <= 80 &&
+          /^-?\d+(?:\.\d+)?$/.test(entry.text)
+      );
+
+    const numericValues = yLabels.map((entry) => Number(entry.text));
+    expect(numericValues.length).toBeGreaterThanOrEqual(2);
+    expect(numericValues.some((value) => Math.abs(value - 1320) < 0.01)).toBe(true);
+    const has96 = numericValues.some((value) => Math.abs(value - 96) < 0.01);
+    const has120 = numericValues.some((value) => Math.abs(value - 120) < 0.01);
+    expect(has96 && has120).toBe(false);
+
+    for (let leftIndex = 0; leftIndex < yLabels.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < yLabels.length; rightIndex += 1) {
+        const yDistance = Math.abs(yLabels[leftIndex].y - yLabels[rightIndex].y);
+        expect(yDistance).toBeGreaterThanOrEqual(11);
+      }
+    }
+
+    chart.destroy();
+    container.remove();
+  });
+
   it("throws controlled validation error for mismatched cartesian arrays", () => {
     const container = document.createElement("div");
     setContainerSize(container, 640, 360);

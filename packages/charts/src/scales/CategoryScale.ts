@@ -6,11 +6,13 @@ export class CategoryScale {
 
   map(index: number): number {
     const [rangeMin, rangeMax] = this.range;
-    if (this.categories.length <= 1) {
+    const count = this.categories.length;
+    if (count <= 1) {
       return (rangeMin + rangeMax) / 2;
     }
-    const step = (rangeMax - rangeMin) / (this.categories.length - 1);
-    return rangeMin + step * index;
+    const clampedIndex = Math.max(0, Math.min(count - 1, Math.round(index)));
+    const step = (rangeMax - rangeMin) / count;
+    return rangeMin + step * (clampedIndex + 0.5);
   }
 
   label(index: number): string {

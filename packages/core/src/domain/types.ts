@@ -315,6 +315,9 @@ export interface ChartRangeBinding {
   firstRowAsHeader: boolean;
   firstColumnAsLabel: boolean;
   autoRefresh: boolean;
+  categoryColumnIndex?: number;
+  seriesColumnIndexes?: number[];
+  valueColumnIndex?: number;
 }
 
 export interface ChartPosition {

@@ -2433,8 +2433,27 @@ describe("DomSpreadsheetRenderer", () => {
       container.querySelector<HTMLButtonElement>("[data-action='chart-column']")?.click();
       const chartId = engine.getCharts(sheet.id)[0]?.id as string;
       const chartBefore = engine.getChart(sheet.id, chartId)!;
+      const sourceRangeBefore = chartBefore.sourceRange ? JSON.parse(JSON.stringify(chartBefore.sourceRange)) : undefined;
 
       const chartElement = container.querySelector<HTMLElement>(`[data-chart-id='${chartId}']`);
+      dispatchMouse(chartElement?.querySelector("[data-chart-body='true']"), "mousedown", {
+        button: 0,
+        clientX: 300,
+        clientY: 220
+      });
+      dispatchMouse(globalThis, "mousemove", {
+        button: 0,
+        clientX: 380,
+        clientY: 300
+      });
+      dispatchMouse(globalThis, "mouseup", {
+        button: 0,
+        clientX: 380,
+        clientY: 300
+      });
+      const afterBodyDrag = engine.getChart(sheet.id, chartId)!;
+      expect(afterBodyDrag.position).toEqual(chartBefore.position);
+
       dispatchMouse(chartElement?.querySelector(".excelsior-chart-object-header"), "mousedown", {
         button: 0,
         clientX: 280,
@@ -2457,6 +2476,7 @@ describe("DomSpreadsheetRenderer", () => {
           moved.position.offsetX !== chartBefore.position.offsetX ||
           moved.position.offsetY !== chartBefore.position.offsetY
       ).toBe(true);
+      expect(moved.sourceRange).toEqual(sourceRangeBefore);
 
       const resizeHandle = container.querySelector<HTMLElement>(`[data-chart-id='${chartId}'] [data-chart-resize='true']`);
       const widthBefore = moved.position.width;
@@ -2480,9 +2500,45 @@ describe("DomSpreadsheetRenderer", () => {
       const resized = engine.getChart(sheet.id, chartId)!;
       expect(resized.position.width).toBeGreaterThanOrEqual(widthBefore);
       expect(resized.position.height).toBeGreaterThanOrEqual(heightBefore);
+      expect(resized.sourceRange).toEqual(sourceRangeBefore);
 
       container.querySelector<HTMLButtonElement>(`[data-chart-id='${chartId}'] [data-chart-action='delete']`)?.click();
       expect(engine.getCharts(sheet.id)).toHaveLength(0);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("normalizes runtime chart dimensions before rendering", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine({}, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      const rendererState = renderer as unknown as {
+        withRuntimeFigureSize: (figure: { data: unknown[]; layout?: Record<string, unknown> }, width: number, height: number) => {
+          data: unknown[];
+          layout?: Record<string, unknown>;
+        };
+      };
+      const sized = rendererState.withRuntimeFigureSize(
+        {
+          data: [],
+          layout: {
+            title: "Sizing Check"
+          }
+        },
+        459.9,
+        279.2
+      );
+      expect(sized.layout?.title).toBe("Sizing Check");
+      expect(sized.layout?.width).toBe(460);
+      expect(sized.layout?.height).toBe(279);
     } finally {
       renderer.dispose();
       container.remove();
@@ -2505,12 +2561,16 @@ describe("DomSpreadsheetRenderer", () => {
             cells: {
               "0:0": { value: "Month", computedValue: "Month" },
               "0:1": { value: "Revenue", computedValue: "Revenue" },
+              "0:2": { value: "Cost", computedValue: "Cost" },
               "1:0": { value: "Jan", computedValue: "Jan" },
               "1:1": { value: 120, computedValue: 120 },
+              "1:2": { value: 95, computedValue: 95 },
               "2:0": { value: "Feb", computedValue: "Feb" },
               "2:1": { value: 180, computedValue: 180 },
+              "2:2": { value: 130, computedValue: 130 },
               "3:0": { value: "Mar", computedValue: "Mar" },
-              "3:1": { value: 90, computedValue: 90 }
+              "3:1": { value: 90, computedValue: 90 },
+              "3:2": { value: 70, computedValue: 70 }
             },
             merges: [],
             columns: {},
@@ -2533,7 +2593,7 @@ describe("DomSpreadsheetRenderer", () => {
         rowStart: 0,
         colStart: 0,
         rowEnd: 3,
-        colEnd: 1
+        colEnd: 2
       });
       container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
 
@@ -2551,20 +2611,33 @@ describe("DomSpreadsheetRenderer", () => {
       const typeSelect = panel?.querySelector<HTMLSelectElement>("[data-chart-role='type']");
       const rangeInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='range']");
       const legendToggle = panel?.querySelector<HTMLInputElement>("[data-chart-role='legend']");
+      const categoryColumnInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='category-column']");
+      const seriesColumnsInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='series-columns']");
+      const valueColumnInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='value-column']");
       titleInput!.value = "Receita Trimestral";
       titleInput?.dispatchEvent(new Event("input", { bubbles: true }));
       typeSelect!.value = "bar";
       typeSelect?.dispatchEvent(new Event("input", { bubbles: true }));
-      rangeInput!.value = "A1:B3";
+      rangeInput!.value = "A1:C3";
       rangeInput?.dispatchEvent(new Event("input", { bubbles: true }));
       legendToggle!.checked = false;
       legendToggle?.dispatchEvent(new Event("input", { bubbles: true }));
+      categoryColumnInput!.value = "1";
+      categoryColumnInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      seriesColumnsInput!.value = "3";
+      seriesColumnsInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      valueColumnInput!.value = "2";
+      valueColumnInput?.dispatchEvent(new Event("input", { bubbles: true }));
       panel?.querySelector<HTMLButtonElement>("[data-chart-action='apply']")?.click();
 
       const edited = engine.getChart(sheet.id, chartId);
       expect(edited?.type).toBe("bar");
       expect(edited?.title).toBe("Receita Trimestral");
-      expect(edited?.sourceRange?.rangeAddress).toBe("A1:B3");
+      expect(edited?.sourceRange?.rangeAddress).toBe("A1:C3");
+      expect(edited?.sourceRange?.categoryColumnIndex).toBe(0);
+      expect(edited?.sourceRange?.seriesColumnIndexes).toEqual([2]);
+      expect(edited?.sourceRange?.valueColumnIndex).toBe(1);
+      expect(Array.isArray(edited?.figure.data) ? edited?.figure.data.length : 0).toBe(1);
       expect((edited?.figure.layout as { legend?: { visible?: boolean } } | undefined)?.legend?.visible).toBe(false);
       expect(selectedEvents.filter((value) => value === chartId).length).toBeGreaterThan(1);
     } finally {

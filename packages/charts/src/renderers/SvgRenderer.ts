@@ -427,6 +427,8 @@ export class SvgRenderer implements ChartRenderer {
       const stackSeries = stackContext.get(entry.index);
       const targetXScale = entry.trace.xAxisRef === "x2" && xScaleSecondary ? xScaleSecondary : xScale;
       const targetXAxisType = entry.trace.xAxisRef === "x2" && xScaleSecondary ? xAxis2Type : xAxisType;
+      const targetCategoryScale =
+        entry.trace.xAxisRef === "x2" && categoryScaleSecondary ? categoryScaleSecondary : categoryScale;
       if (entry.trace.type === "bar") {
         const barIndex = unstackedBars.findIndex((candidate) => candidate.index === entry.index);
         const targetYScale = entry.trace.yAxisRef === "y2" && yScaleSecondary ? yScaleSecondary : yScale;
@@ -440,6 +442,7 @@ export class SvgRenderer implements ChartRenderer {
           Math.max(0, barIndex),
           barCount,
           targetXAxisType,
+          targetCategoryScale,
           stackSeries
         );
       } else {
@@ -454,6 +457,7 @@ export class SvgRenderer implements ChartRenderer {
           color,
           plotArea,
           targetXAxisType,
+          targetCategoryScale,
           stackSeries,
           previousArea
         );
@@ -466,6 +470,8 @@ export class SvgRenderer implements ChartRenderer {
     });
 
     svg.append(tracesLayer);
+    const primaryYValues = this.collectNumericAxisValues(primaryYTraces.flatMap((entry) => entry.trace.y));
+    const secondaryYValues = this.collectNumericAxisValues(secondaryYTraces.flatMap((entry) => entry.trace.y));
     this.renderCartesianAxes(
       svg,
       figure,
@@ -477,7 +483,9 @@ export class SvgRenderer implements ChartRenderer {
       yScaleSecondary,
       xScaleSecondary,
       secondaryXDomains?.labels,
-      categoryScaleSecondary ?? undefined
+      categoryScaleSecondary ?? undefined,
+      primaryYValues,
+      secondaryYValues
     );
   }
 
@@ -761,6 +769,12 @@ export class SvgRenderer implements ChartRenderer {
     });
 
     svg.append(tracesLayer);
+    const primaryYValues = this.collectNumericAxisValues(
+      primaryYTraces.flatMap((entry) => [...entry.trace.low, ...entry.trace.high, ...entry.trace.open, ...entry.trace.close])
+    );
+    const secondaryYValues = this.collectNumericAxisValues(
+      secondaryYTraces.flatMap((entry) => [...entry.trace.low, ...entry.trace.high, ...entry.trace.open, ...entry.trace.close])
+    );
     this.renderCartesianAxes(
       svg,
       figure,
@@ -772,7 +786,9 @@ export class SvgRenderer implements ChartRenderer {
       yScaleSecondary,
       xScaleSecondary,
       secondaryXDomains?.labels,
-      categoryScaleSecondary ?? undefined
+      categoryScaleSecondary ?? undefined,
+      primaryYValues,
+      secondaryYValues
     );
   }
 
@@ -2420,6 +2436,103 @@ export class SvgRenderer implements ChartRenderer {
     svg.append(gridGroup);
   }
 
+  private collectNumericAxisValues(values: number[]): number[] {
+    return values.filter((value) => Number.isFinite(value));
+  }
+
+  private resolveAxisTicks(
+    scale: LinearScale,
+    fallbackCount: number,
+    axisPixelSpan: number,
+    axis: ChartFigure["layout"]["yAxis"],
+    preferredValues?: number[]
+  ): number[] {
+    const normalizeTick = (value: number): number => Math.round(value * 1_000_000) / 1_000_000;
+    const fallback = Array.from(new Set(scale.ticks(Math.max(2, fallbackCount)).map(normalizeTick)))
+      .filter((value) => Number.isFinite(value))
+      .sort((left, right) => left - right);
+    if (!preferredValues || preferredValues.length === 0) {
+      return fallback;
+    }
+    const axisType = normalizeAxisType(axis, "linear");
+    let numeric = preferredValues.filter((value) => Number.isFinite(value));
+    if (axisType === "log") {
+      numeric = numeric.filter((value) => value > 0);
+    }
+    if (numeric.length === 0) {
+      return fallback;
+    }
+
+    const normalizedValues = numeric.map(normalizeTick);
+    const dataMin = Math.min(...normalizedValues);
+    const dataMax = Math.max(...normalizedValues);
+    const [domainStart, domainEnd] = scale.ticks(2);
+    const domainMin = Math.min(domainStart, domainEnd);
+    const domainMax = Math.max(domainStart, domainEnd);
+    const includesZero = axisType === "linear" && domainMin <= 0 && domainMax >= 0;
+
+    const minPixelGap = 14;
+    const maxVisibleTicks = clampInt(Math.floor(axisPixelSpan / minPixelGap), 2, 10);
+    const baseTickCount = clampInt(Math.min(Math.max(2, fallbackCount), maxVisibleTicks), 2, 10);
+    const baseTicks = Array.from(new Set(scale.ticks(baseTickCount).map(normalizeTick))).sort((left, right) => left - right);
+    const candidateValues = Array.from(
+      new Set([...baseTicks, dataMin, dataMax, ...(includesZero ? [0] : [])].map(normalizeTick))
+    ).sort((left, right) => left - right);
+
+    const priorityOf = (value: number): number => {
+      if (includesZero && Math.abs(value) <= 1e-6) {
+        return 4;
+      }
+      if (Math.abs(value - dataMin) <= 1e-6 || Math.abs(value - dataMax) <= 1e-6) {
+        return 3;
+      }
+      if (baseTicks.some((tick) => Math.abs(tick - value) <= 1e-6)) {
+        return 2;
+      }
+      return 1;
+    };
+
+    const prioritized = candidateValues
+      .map((value) => ({
+        value,
+        priority: priorityOf(value),
+        pixel: scale.map(value)
+      }))
+      .filter((entry) => Number.isFinite(entry.pixel))
+      .sort((left, right) => {
+        if (left.priority !== right.priority) {
+          return right.priority - left.priority;
+        }
+        return left.value - right.value;
+      });
+
+    const selected: Array<{ value: number; pixel: number; priority: number }> = [];
+    for (const candidate of prioritized) {
+      let conflictIndex = -1;
+      for (let index = 0; index < selected.length; index += 1) {
+        if (Math.abs(selected[index].pixel - candidate.pixel) < minPixelGap) {
+          conflictIndex = index;
+          break;
+        }
+      }
+      if (conflictIndex === -1) {
+        if (selected.length < maxVisibleTicks) {
+          selected.push(candidate);
+        }
+        continue;
+      }
+      if (candidate.priority > selected[conflictIndex].priority) {
+        selected[conflictIndex] = candidate;
+      }
+    }
+
+    const resolved = selected.map((entry) => entry.value).sort((left, right) => left - right);
+    if (resolved.length >= 2) {
+      return resolved;
+    }
+    return baseTicks.length >= 2 ? baseTicks : fallback;
+  }
+
   private renderCartesianAxes(
     svg: SVGSVGElement,
     figure: ChartFigure,
@@ -2431,7 +2544,9 @@ export class SvgRenderer implements ChartRenderer {
     yScaleSecondary?: LinearScale | null,
     xScaleSecondary?: LinearScale | null,
     labelsSecondary?: string[],
-    categoryScaleSecondary?: CategoryScale
+    categoryScaleSecondary?: CategoryScale,
+    primaryYValues?: number[],
+    secondaryYValues?: number[]
   ): void {
     const xAxisType = normalizeAxisType(figure.layout.xAxis, "category");
     const xAxis2Type = normalizeAxisType(figure.layout.xAxis2, xAxisType);
@@ -2457,22 +2572,40 @@ export class SvgRenderer implements ChartRenderer {
     axesGroup.append(yAxisLine);
 
     const xTickCount = getAxisTickCount(figure.layout.xAxis, Math.max(2, Math.min(10, Math.round(plotArea.width / 90))), 2, 20);
-    const xTicks = xScale
-      .ticks(xTickCount)
+    const xTickValues =
+      xAxisType === "category" || xAxisType === "multicategory"
+        ? buildCategoricalTickIndexes(labels.length, xTickCount).map((index) => Number(index))
+        : xScale.ticks(xTickCount);
+    const seenCategoryIndexes = new Set<number>();
+    const xTicks = xTickValues
       .map((tick) => {
-        const x = xScale.map(tick);
-        const categoryIndex = Math.round(tick);
+        const categoryIndex = clampInt(Math.round(tick), 0, Math.max(0, labels.length - 1));
+        const x =
+          xAxisType === "category" || xAxisType === "multicategory" ? categoryScale.map(categoryIndex) : xScale.map(tick);
         const categoryLabel = labels[categoryIndex] ?? categoryScale.label(categoryIndex);
         return {
           tick,
           x,
+          categoryIndex,
           label:
             xAxisType === "category" || xAxisType === "multicategory"
               ? categoryLabel
               : formatAxisTick(tick, figure.layout.xAxis, categoryLabel)
         };
       })
-      .filter((entry) => entry.x >= plotArea.x - 1 && entry.x <= plotArea.x + plotArea.width + 1);
+      .filter((entry) => {
+        if (entry.x < plotArea.x - 1 || entry.x > plotArea.x + plotArea.width + 1) {
+          return false;
+        }
+        if (xAxisType !== "category" && xAxisType !== "multicategory") {
+          return true;
+        }
+        if (seenCategoryIndexes.has(entry.categoryIndex)) {
+          return false;
+        }
+        seenCategoryIndexes.add(entry.categoryIndex);
+        return true;
+      });
 
     xTicks.forEach((entry) => {
       const tickLine = createSvgElement("line");
@@ -2534,7 +2667,8 @@ export class SvgRenderer implements ChartRenderer {
     }
 
     const yTickCount = getAxisTickCount(figure.layout.yAxis, Math.max(2, Math.min(10, Math.round(plotArea.height / 56))), 2, 20);
-    for (const tick of yScale.ticks(yTickCount)) {
+    const yTicks = this.resolveAxisTicks(yScale, yTickCount, plotArea.height, figure.layout.yAxis, primaryYValues);
+    for (const tick of yTicks) {
       const y = yScale.map(tick);
       const tickLine = createSvgElement("line");
       tickLine.setAttribute("x1", String(axisLeftX - 5));
@@ -2592,7 +2726,14 @@ export class SvgRenderer implements ChartRenderer {
       axesGroup.append(secondaryAxisLine);
 
       const secondaryTickCount = getAxisTickCount(figure.layout.yAxis2, Math.max(2, Math.min(10, Math.round(plotArea.height / 56))), 2, 20);
-      for (const tick of yScaleSecondary.ticks(secondaryTickCount)) {
+      const secondaryTicks = this.resolveAxisTicks(
+        yScaleSecondary,
+        secondaryTickCount,
+        plotArea.height,
+        figure.layout.yAxis2,
+        secondaryYValues
+      );
+      for (const tick of secondaryTicks) {
         const y = yScaleSecondary.map(tick);
         const tickLine = createSvgElement("line");
         tickLine.setAttribute("x1", String(axisRightX));
@@ -2638,22 +2779,42 @@ export class SvgRenderer implements ChartRenderer {
       const secondaryLabels = labelsSecondary ?? [];
       const secondaryCategories = categoryScaleSecondary ?? new CategoryScale(secondaryLabels, [plotArea.x, plotArea.x + plotArea.width]);
       const x2TickCount = getAxisTickCount(figure.layout.xAxis2, Math.max(2, Math.min(10, Math.round(plotArea.width / 90))), 2, 20);
-      const topTicks = xScaleSecondary
-        .ticks(x2TickCount)
+      const x2TickValues =
+        xAxis2Type === "category" || xAxis2Type === "multicategory"
+          ? buildCategoricalTickIndexes(secondaryLabels.length, x2TickCount).map((index) => Number(index))
+          : xScaleSecondary.ticks(x2TickCount);
+      const seenSecondaryCategories = new Set<number>();
+      const topTicks = x2TickValues
         .map((tick) => {
-          const x = xScaleSecondary.map(tick);
-          const categoryIndex = Math.round(tick);
+          const categoryIndex = clampInt(Math.round(tick), 0, Math.max(0, secondaryLabels.length - 1));
+          const x =
+            xAxis2Type === "category" || xAxis2Type === "multicategory"
+              ? secondaryCategories.map(categoryIndex)
+              : xScaleSecondary.map(tick);
           const categoryLabel = secondaryLabels[categoryIndex] ?? secondaryCategories.label(categoryIndex);
           return {
             tick,
             x,
+            categoryIndex,
             label:
               xAxis2Type === "category" || xAxis2Type === "multicategory"
                 ? categoryLabel
                 : formatAxisTick(tick, figure.layout.xAxis2, categoryLabel)
           };
         })
-        .filter((entry) => entry.x >= plotArea.x - 1 && entry.x <= plotArea.x + plotArea.width + 1);
+        .filter((entry) => {
+          if (entry.x < plotArea.x - 1 || entry.x > plotArea.x + plotArea.width + 1) {
+            return false;
+          }
+          if (xAxis2Type !== "category" && xAxis2Type !== "multicategory") {
+            return true;
+          }
+          if (seenSecondaryCategories.has(entry.categoryIndex)) {
+            return false;
+          }
+          seenSecondaryCategories.add(entry.categoryIndex);
+          return true;
+        });
       topTicks.forEach((entry) => {
         const tickLine = createSvgElement("line");
         tickLine.setAttribute("x1", String(entry.x));
@@ -2736,13 +2897,14 @@ export class SvgRenderer implements ChartRenderer {
     color: string,
     plotArea: ComputedPlotArea,
     xAxisType: "linear" | "log" | "date" | "category" | "multicategory",
+    categoryScale: CategoryScale,
     stackSeries?: { stacked: boolean; points: Array<{ base: number; top: number; value: number }> },
     previousAreaPoints?: CartesianPoint[]
   ): CartesianPoint[] {
     const trace = traceEntry.trace;
     const mode = this.resolveTraceMode(trace);
     const yOverride = stackSeries?.stacked ? stackSeries.points.map((point) => point.top) : undefined;
-    const points = this.buildCartesianPoints(trace, xScale, yScale, xAxisType, yOverride);
+    const points = this.buildCartesianPoints(trace, xScale, yScale, xAxisType, categoryScale, yOverride);
 
     if (trace.type === "area" && points.length > 1) {
       const baselinePixels = stackSeries?.stacked
@@ -2808,6 +2970,7 @@ export class SvgRenderer implements ChartRenderer {
     barIndex: number,
     barCount: number,
     xAxisType: "linear" | "log" | "date" | "category" | "multicategory",
+    categoryScale: CategoryScale,
     stackSeries?: { stacked: boolean; points: Array<{ base: number; top: number; value: number }> }
   ): void {
     const trace = traceEntry.trace;
@@ -2824,7 +2987,8 @@ export class SvgRenderer implements ChartRenderer {
         return;
       }
       const xValue = toAxisScalar(trace.x[pointIndex], xAxisType, pointIndex);
-      const centerX = xScale.map(xValue);
+      const centerX =
+        xAxisType === "category" || xAxisType === "multicategory" ? categoryScale.map(xValue) : xScale.map(xValue);
       const activeBarWidth = isStacked ? barSlotWidth : barWidth;
       const x = centerX - barSlotWidth / 2 + (isStacked ? 0 : activeBarWidth * barIndex);
       const stackedPoint = stackSeries?.points[pointIndex];
@@ -2876,6 +3040,7 @@ export class SvgRenderer implements ChartRenderer {
     xScale: LinearScale,
     yScale: LinearScale,
     xAxisType: "linear" | "log" | "date" | "category" | "multicategory",
+    categoryScale: CategoryScale,
     yOverride?: number[]
   ): CartesianPoint[] {
     const points: CartesianPoint[] = [];
@@ -2888,9 +3053,11 @@ export class SvgRenderer implements ChartRenderer {
         continue;
       }
       const xValue = toAxisScalar(trace.x[index], xAxisType, index);
+      const xPixel =
+        xAxisType === "category" || xAxisType === "multicategory" ? categoryScale.map(xValue) : xScale.map(xValue);
       points.push({
         pointIndex: index,
-        xPixel: xScale.map(xValue),
+        xPixel,
         yPixel: yScale.map(value),
         xLabel: String(trace.x[index] ?? index),
         yLabel: formatNumeric(value)
@@ -2901,9 +3068,11 @@ export class SvgRenderer implements ChartRenderer {
       const lastValue = sourceY[lastIndex];
       if (Number.isFinite(lastValue) && points.at(-1)?.pointIndex !== lastIndex) {
         const xValue = toAxisScalar(trace.x[lastIndex], xAxisType, lastIndex);
+        const xPixel =
+          xAxisType === "category" || xAxisType === "multicategory" ? categoryScale.map(xValue) : xScale.map(xValue);
         points.push({
           pointIndex: lastIndex,
-          xPixel: xScale.map(xValue),
+          xPixel,
           yPixel: yScale.map(lastValue),
           xLabel: String(trace.x[lastIndex] ?? lastIndex),
           yLabel: formatNumeric(lastValue)
@@ -3677,6 +3846,26 @@ const splitMulticategoryLabel = (label: string): { group: string; leaf: string }
     }
   }
   return { group: "", leaf: normalized };
+};
+
+const buildCategoricalTickIndexes = (labelCount: number, maxTicks: number): number[] => {
+  const total = Math.max(0, Math.floor(labelCount));
+  if (total <= 0) {
+    return [0];
+  }
+  if (total <= maxTicks) {
+    return Array.from({ length: total }, (_value, index) => index);
+  }
+  const limit = Math.max(2, Math.floor(maxTicks));
+  const step = Math.max(1, Math.ceil(total / limit));
+  const indexes: number[] = [];
+  for (let index = 0; index < total; index += step) {
+    indexes.push(index);
+  }
+  if (indexes[indexes.length - 1] !== total - 1) {
+    indexes.push(total - 1);
+  }
+  return indexes;
 };
 
 const clampInt = (value: number, min: number, max: number): number => {

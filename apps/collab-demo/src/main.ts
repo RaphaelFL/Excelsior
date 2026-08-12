@@ -67,6 +67,18 @@ const start = async () => {
   const initialWorkbook = await fetchWorkbook();
   const engine = WorkbookEngine.fromJSON(initialWorkbook, new BasicFormulaEngine());
   const renderer = new DomSpreadsheetRenderer(host, engine, {
+    chartLimits: {
+      maxChartsPerSheet: 50,
+      maxRangeCells: 100000,
+      maxSeriesPerChart: 24,
+      maxPointsPerChart: 50000
+    },
+    chartPerformance: {
+      interactionThrottleMs: 16,
+      offscreenMarginPx: 320,
+      skipOffscreenPreview: true
+    },
+    chartInsertPreview: true,
     onChange: async (operations: SpreadsheetOperation[]) => {
       log.textContent = JSON.stringify(operations, null, 2);
       await fetch("/api/ops", {

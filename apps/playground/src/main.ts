@@ -50,8 +50,22 @@ createSpreadsheet(host, {
     }
   ],
   settings: {
-    clipboardPolicy: "safe-html"
+    clipboardPolicy: "safe-html",
+    rowHeight: 28,
+    columnWidth: 112
   },
+  chartLimits: {
+    maxChartsPerSheet: 50,
+    maxRangeCells: 100000,
+    maxSeriesPerChart: 24,
+    maxPointsPerChart: 50000
+  },
+  chartPerformance: {
+    interactionThrottleMs: 16,
+    offscreenMarginPx: 320,
+    skipOffscreenPreview: true
+  },
+  chartInsertPreview: true,
   onChange: (operations) => {
     log.textContent = JSON.stringify(operations, null, 2);
   }

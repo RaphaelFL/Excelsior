@@ -27,6 +27,9 @@ export const Spreadsheet = defineComponent({
     autofill: Object as PropType<CreateSpreadsheetOptions["autofill"]>,
     localization: Object as PropType<CreateSpreadsheetOptions["localization"]>,
     renderDebounceMs: Number as PropType<CreateSpreadsheetOptions["renderDebounceMs"]>,
+    chartLimits: Object as PropType<CreateSpreadsheetOptions["chartLimits"]>,
+    chartPerformance: Object as PropType<CreateSpreadsheetOptions["chartPerformance"]>,
+    chartInsertPreview: Boolean as PropType<CreateSpreadsheetOptions["chartInsertPreview"]>,
     rowModel: Object as PropType<CreateSpreadsheetOptions["rowModel"]>
   },
   setup(props) {
@@ -44,6 +47,9 @@ export const Spreadsheet = defineComponent({
       autofill: props.autofill,
       localization: props.localization,
       renderDebounceMs: props.renderDebounceMs,
+      chartLimits: props.chartLimits,
+      chartPerformance: props.chartPerformance,
+      chartInsertPreview: props.chartInsertPreview,
       rowModel: props.rowModel
     });
 
@@ -63,6 +69,9 @@ export const Spreadsheet = defineComponent({
         props.autofill,
         props.localization,
         props.renderDebounceMs,
+        props.chartLimits,
+        props.chartPerformance,
+        props.chartInsertPreview,
         props.rowModel
       ],
       () => {

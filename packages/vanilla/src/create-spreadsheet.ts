@@ -5,6 +5,7 @@ import {
   type AutofillOptions,
   type CustomCellEditor,
   type CustomCellRenderer,
+  type DomSpreadsheetRendererOptions,
   type RendererLocalizationOptions
 } from "@excelsior/renderer-dom";
 
@@ -16,6 +17,9 @@ export interface CreateSpreadsheetOptions extends WorkbookConfig {
   autofill?: AutofillOptions;
   localization?: RendererLocalizationOptions;
   renderDebounceMs?: number;
+  chartLimits?: DomSpreadsheetRendererOptions["chartLimits"];
+  chartPerformance?: DomSpreadsheetRendererOptions["chartPerformance"];
+  chartInsertPreview?: DomSpreadsheetRendererOptions["chartInsertPreview"];
   rowModel?: RowModel;
 }
 
@@ -40,7 +44,10 @@ export const createSpreadsheet = (
     includeHiddenCellsInClipboard: options.includeHiddenCellsInClipboard,
     autofill: options.autofill,
     localization: options.localization,
-    renderDebounceMs: options.renderDebounceMs
+    renderDebounceMs: options.renderDebounceMs,
+    chartLimits: options.chartLimits,
+    chartPerformance: options.chartPerformance,
+    chartInsertPreview: options.chartInsertPreview
   });
 
   return {

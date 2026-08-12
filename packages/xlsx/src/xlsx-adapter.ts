@@ -2409,7 +2409,7 @@ export const createXlsxAdapter = (currentModulePath: string): XlsxAdapter => {
             }
           : undefined
       ).toBuffer();
-      return new Uint8Array(buffer);
+    return new Uint8Array(buffer);
     } catch (error) {
       options?.onChartError?.({
         errorCode: "XLSX_CHART_EXPORT_FAILED",
@@ -2424,15 +2424,15 @@ export const createXlsxAdapter = (currentModulePath: string): XlsxAdapter => {
     options?: XlsxChartInteropOptions
   ): Promise<WorkbookModel> => {
     try {
-      const contents = await unpackXlsxFile(toBuffer(input));
-      const filePaths = parseFilePaths(contents["xl/_rels/workbook.xml.rels"], xmlModule);
-      const workbookInfo = parseSpreadsheetInfo(contents["xl/workbook.xml"], xmlModule);
-      const sharedStrings = parseSharedStrings(
-        filePaths.sharedStrings ? contents[filePaths.sharedStrings] : undefined,
-        xmlModule
-      );
-      const valueStyles = parseValueStyles(filePaths.styles ? contents[filePaths.styles] : undefined, xmlModule);
-      const styleTable = parseStyleTable(filePaths.styles ? contents[filePaths.styles] : undefined);
+    const contents = await unpackXlsxFile(toBuffer(input));
+    const filePaths = parseFilePaths(contents["xl/_rels/workbook.xml.rels"], xmlModule);
+    const workbookInfo = parseSpreadsheetInfo(contents["xl/workbook.xml"], xmlModule);
+    const sharedStrings = parseSharedStrings(
+      filePaths.sharedStrings ? contents[filePaths.sharedStrings] : undefined,
+      xmlModule
+    );
+    const valueStyles = parseValueStyles(filePaths.styles ? contents[filePaths.styles] : undefined, xmlModule);
+    const styleTable = parseStyleTable(filePaths.styles ? contents[filePaths.styles] : undefined);
 
     const parsedSheets = workbookInfo.sheets.map((sheetInfo, index) => {
       const sheetPath = filePaths.sheets[sheetInfo.relationId];
@@ -2542,30 +2542,30 @@ export const createXlsxAdapter = (currentModulePath: string): XlsxAdapter => {
     }
     const sheets = parsedSheets.map(({ sheet }) => sheet);
 
-      return {
-        id: "workbook-imported",
-        sheets: sheets.length
-          ? sheets
-          : [
-              {
-                id: createSheetId(0),
-                name: DEFAULT_SHEET_NAME,
-                rowCount: 1,
-                columnCount: 1,
-                cells: {},
-                merges: [],
-                columns: {},
-                rows: {},
-                selection: {
-                  start: { row: 0, col: 0 },
-                  end: { row: 0, col: 0 }
-                }
+    return {
+      id: "workbook-imported",
+      sheets: sheets.length
+        ? sheets
+        : [
+            {
+              id: createSheetId(0),
+              name: DEFAULT_SHEET_NAME,
+              rowCount: 1,
+              columnCount: 1,
+              cells: {},
+              merges: [],
+              columns: {},
+              rows: {},
+              selection: {
+                start: { row: 0, col: 0 },
+                end: { row: 0, col: 0 }
               }
-            ],
-        activeSheetId: sheets[0]?.id ?? createSheetId(0),
-        metadata: {},
-        settings: workbookDefaults
-      };
+            }
+          ],
+      activeSheetId: sheets[0]?.id ?? createSheetId(0),
+      metadata: {},
+      settings: workbookDefaults
+    };
     } catch (error) {
       options?.onChartError?.({
         errorCode: "XLSX_CHART_IMPORT_FAILED",

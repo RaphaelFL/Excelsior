@@ -243,6 +243,13 @@ export interface RendererMessages {
   chartEditYAxisTypeLabel: string;
   chartEditXAxisVisibleLabel: string;
   chartEditYAxisVisibleLabel: string;
+  chartEditOrientationLabel: string;
+  chartEditFirstRowHeaderLabel: string;
+  chartEditFirstColumnLabelLabel: string;
+  chartEditAutoRefreshLabel: string;
+  chartEditCategoryColumnLabel: string;
+  chartEditSeriesColumnsLabel: string;
+  chartEditValueColumnLabel: string;
   chartAxisTypeLinear: string;
   chartAxisTypeCategory: string;
   chartAxisTypeDate: string;
@@ -251,6 +258,7 @@ export interface RendererMessages {
   chartEditClose: string;
   chartEditSaved: string;
   chartEditInvalidRange: string;
+  chartEditInvalidBinding: string;
   chartPreviewTitle: string;
   chartPreviewInsert: string;
   chartPreviewCancel: string;
@@ -435,6 +443,13 @@ const DEFAULT_RENDERER_MESSAGES: RendererMessages = {
   chartEditYAxisTypeLabel: "Tipo eixo Y",
   chartEditXAxisVisibleLabel: "Exibir eixo X",
   chartEditYAxisVisibleLabel: "Exibir eixo Y",
+  chartEditOrientationLabel: "Orientação",
+  chartEditFirstRowHeaderLabel: "1ª linha como cabeçalho",
+  chartEditFirstColumnLabelLabel: "1ª coluna como categoria",
+  chartEditAutoRefreshLabel: "Atualização automática",
+  chartEditCategoryColumnLabel: "Coluna de categorias (X)",
+  chartEditSeriesColumnsLabel: "Colunas de séries (Y)",
+  chartEditValueColumnLabel: "Coluna de valores (pie/donut)",
   chartAxisTypeLinear: "Linear",
   chartAxisTypeCategory: "Categoria",
   chartAxisTypeDate: "Data",
@@ -443,6 +458,7 @@ const DEFAULT_RENDERER_MESSAGES: RendererMessages = {
   chartEditClose: "Fechar",
   chartEditSaved: "Configurações do gráfico atualizadas.",
   chartEditInvalidRange: "Intervalo inválido. Use o formato A1:C10.",
+  chartEditInvalidBinding: "Configuração de colunas inválida para o intervalo informado.",
   chartPreviewTitle: "Pré-visualização do gráfico",
   chartPreviewInsert: "Inserir gráfico",
   chartPreviewCancel: "Cancelar"
@@ -779,7 +795,14 @@ interface ChartInteractionState {
 
 type ChartBindingOptions = Pick<
   NonNullable<WorksheetChartObject["sourceRange"]>,
-  "rangeAddress" | "orientation" | "firstRowAsHeader" | "firstColumnAsLabel" | "autoRefresh"
+  | "rangeAddress"
+  | "orientation"
+  | "firstRowAsHeader"
+  | "firstColumnAsLabel"
+  | "autoRefresh"
+  | "categoryColumnIndex"
+  | "seriesColumnIndexes"
+  | "valueColumnIndex"
 >;
 
 const CHART_ACTION_TO_TYPE: Record<ChartToolbarAction, WorksheetChartType> = {
@@ -859,6 +882,7 @@ const CHART_EDIT_TYPE_OPTIONS: Array<{ type: WorksheetChartType; messageKey: key
 ];
 const CHART_AXIS_TYPE_OPTIONS = ["linear", "category", "date", "log"] as const;
 type ChartAxisTypeOption = (typeof CHART_AXIS_TYPE_OPTIONS)[number];
+type ChartAxisLayoutType = ChartAxisTypeOption | "multicategory";
 
 const CHART_MIN_WIDTH = 220;
 const CHART_MIN_HEIGHT = 150;
@@ -988,6 +1012,20 @@ export class DomSpreadsheetRenderer {
   private readonly chartEditXAxisVisibleToggle = document.createElement("input");
 
   private readonly chartEditYAxisVisibleToggle = document.createElement("input");
+
+  private readonly chartEditOrientationSelect = document.createElement("select");
+
+  private readonly chartEditFirstRowHeaderToggle = document.createElement("input");
+
+  private readonly chartEditFirstColumnLabelToggle = document.createElement("input");
+
+  private readonly chartEditAutoRefreshToggle = document.createElement("input");
+
+  private readonly chartEditCategoryColumnInput = document.createElement("input");
+
+  private readonly chartEditSeriesColumnsInput = document.createElement("input");
+
+  private readonly chartEditValueColumnInput = document.createElement("input");
 
   private readonly chartEditApplyButton = createFindReplaceActionButton("apply", "");
 
@@ -3272,6 +3310,37 @@ export class DomSpreadsheetRenderer {
     this.chartEditXAxisVisibleToggle.dataset.chartRole = "x-axis-visible";
     this.chartEditYAxisVisibleToggle.type = "checkbox";
     this.chartEditYAxisVisibleToggle.dataset.chartRole = "y-axis-visible";
+    this.chartEditOrientationSelect.className = "excelsior-find-replace-input";
+    this.chartEditOrientationSelect.dataset.chartRole = "orientation";
+    this.chartEditOrientationSelect.replaceChildren(
+      ...([
+        ["rows", "Linhas"],
+        ["columns", "Colunas"]
+      ] as const).map(([value, label]) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        return option;
+      })
+    );
+    this.chartEditFirstRowHeaderToggle.type = "checkbox";
+    this.chartEditFirstRowHeaderToggle.dataset.chartRole = "first-row-header";
+    this.chartEditFirstColumnLabelToggle.type = "checkbox";
+    this.chartEditFirstColumnLabelToggle.dataset.chartRole = "first-column-label";
+    this.chartEditAutoRefreshToggle.type = "checkbox";
+    this.chartEditAutoRefreshToggle.dataset.chartRole = "auto-refresh";
+    this.chartEditCategoryColumnInput.type = "text";
+    this.chartEditCategoryColumnInput.className = "excelsior-find-replace-input";
+    this.chartEditCategoryColumnInput.dataset.chartRole = "category-column";
+    this.chartEditCategoryColumnInput.placeholder = "1";
+    this.chartEditSeriesColumnsInput.type = "text";
+    this.chartEditSeriesColumnsInput.className = "excelsior-find-replace-input";
+    this.chartEditSeriesColumnsInput.dataset.chartRole = "series-columns";
+    this.chartEditSeriesColumnsInput.placeholder = "2,3";
+    this.chartEditValueColumnInput.type = "text";
+    this.chartEditValueColumnInput.className = "excelsior-find-replace-input";
+    this.chartEditValueColumnInput.dataset.chartRole = "value-column";
+    this.chartEditValueColumnInput.placeholder = "2";
 
     const pivotRowField = document.createElement("label");
     pivotRowField.className = "excelsior-find-replace-field";
@@ -3392,6 +3461,41 @@ export class DomSpreadsheetRenderer {
     const chartYAxisVisibleText = document.createElement("span");
     chartYAxisVisibleText.textContent = this.messages.chartEditYAxisVisibleLabel;
     chartYAxisVisibleToggle.append(this.chartEditYAxisVisibleToggle, chartYAxisVisibleText);
+    const chartOrientationField = document.createElement("label");
+    chartOrientationField.className = "excelsior-find-replace-field";
+    const chartOrientationLabel = document.createElement("span");
+    chartOrientationLabel.textContent = this.messages.chartEditOrientationLabel;
+    chartOrientationField.append(chartOrientationLabel, this.chartEditOrientationSelect);
+    const chartCategoryColumnField = document.createElement("label");
+    chartCategoryColumnField.className = "excelsior-find-replace-field";
+    const chartCategoryColumnLabel = document.createElement("span");
+    chartCategoryColumnLabel.textContent = this.messages.chartEditCategoryColumnLabel;
+    chartCategoryColumnField.append(chartCategoryColumnLabel, this.chartEditCategoryColumnInput);
+    const chartSeriesColumnsField = document.createElement("label");
+    chartSeriesColumnsField.className = "excelsior-find-replace-field";
+    const chartSeriesColumnsLabel = document.createElement("span");
+    chartSeriesColumnsLabel.textContent = this.messages.chartEditSeriesColumnsLabel;
+    chartSeriesColumnsField.append(chartSeriesColumnsLabel, this.chartEditSeriesColumnsInput);
+    const chartValueColumnField = document.createElement("label");
+    chartValueColumnField.className = "excelsior-find-replace-field";
+    const chartValueColumnLabel = document.createElement("span");
+    chartValueColumnLabel.textContent = this.messages.chartEditValueColumnLabel;
+    chartValueColumnField.append(chartValueColumnLabel, this.chartEditValueColumnInput);
+    const chartFirstRowHeaderToggle = document.createElement("label");
+    chartFirstRowHeaderToggle.className = "excelsior-find-replace-toggle";
+    const chartFirstRowHeaderText = document.createElement("span");
+    chartFirstRowHeaderText.textContent = this.messages.chartEditFirstRowHeaderLabel;
+    chartFirstRowHeaderToggle.append(this.chartEditFirstRowHeaderToggle, chartFirstRowHeaderText);
+    const chartFirstColumnLabelToggle = document.createElement("label");
+    chartFirstColumnLabelToggle.className = "excelsior-find-replace-toggle";
+    const chartFirstColumnLabelText = document.createElement("span");
+    chartFirstColumnLabelText.textContent = this.messages.chartEditFirstColumnLabelLabel;
+    chartFirstColumnLabelToggle.append(this.chartEditFirstColumnLabelToggle, chartFirstColumnLabelText);
+    const chartAutoRefreshToggle = document.createElement("label");
+    chartAutoRefreshToggle.className = "excelsior-find-replace-toggle";
+    const chartAutoRefreshText = document.createElement("span");
+    chartAutoRefreshText.textContent = this.messages.chartEditAutoRefreshLabel;
+    chartAutoRefreshToggle.append(this.chartEditAutoRefreshToggle, chartAutoRefreshText);
     const chartHeader = document.createElement("span");
     chartHeader.className = "excelsior-chart-edit-panel-title";
     chartHeader.textContent = this.messages.chartEditPanelTitle;
@@ -3407,7 +3511,14 @@ export class DomSpreadsheetRenderer {
       chartYAxisTitleField,
       chartXAxisTypeField,
       chartYAxisTypeField,
+      chartOrientationField,
+      chartCategoryColumnField,
+      chartSeriesColumnsField,
+      chartValueColumnField,
       chartLegendToggle,
+      chartFirstRowHeaderToggle,
+      chartFirstColumnLabelToggle,
+      chartAutoRefreshToggle,
       chartXAxisVisibleToggle,
       chartYAxisVisibleToggle,
       chartActions
@@ -5492,8 +5603,127 @@ export class DomSpreadsheetRenderer {
       orientation: "rows",
       firstRowAsHeader: true,
       firstColumnAsLabel: true,
-      autoRefresh: true
+      autoRefresh: true,
+      categoryColumnIndex: 0
     };
+  }
+
+  private getChartBindingOptions(chart: WorksheetChartObject): ChartBindingOptions | undefined {
+    const sourceRange = chart.sourceRange;
+    if (!sourceRange) {
+      return undefined;
+    }
+    return {
+      rangeAddress: sourceRange.rangeAddress,
+      orientation: sourceRange.orientation,
+      firstRowAsHeader: sourceRange.firstRowAsHeader,
+      firstColumnAsLabel: sourceRange.firstColumnAsLabel,
+      autoRefresh: sourceRange.autoRefresh,
+      categoryColumnIndex: sourceRange.categoryColumnIndex,
+      seriesColumnIndexes: sourceRange.seriesColumnIndexes ? [...sourceRange.seriesColumnIndexes] : undefined,
+      valueColumnIndex: sourceRange.valueColumnIndex
+    };
+  }
+
+  private formatChartColumnIndexInput(value: number | undefined): string {
+    return Number.isInteger(value) && (value as number) >= 0 ? String((value as number) + 1) : "";
+  }
+
+  private formatChartColumnIndexListInput(values: number[] | undefined): string {
+    if (!Array.isArray(values) || values.length === 0) {
+      return "";
+    }
+    return values.map((value) => String(value + 1)).join(",");
+  }
+
+  private parseChartColumnIndexInput(raw: string, fieldLabel: string): number | undefined {
+    const normalized = raw.trim();
+    if (!normalized) {
+      return undefined;
+    }
+    if (!/^\d+$/.test(normalized)) {
+      throw new SpreadsheetOperationError({
+        code: "RENDERER_CHART_BINDING_INVALID",
+        message: `${this.messages.chartEditInvalidBinding} (${fieldLabel})`,
+        area: "renderer",
+        recoverable: true
+      });
+    }
+    const parsed = Number(normalized);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new SpreadsheetOperationError({
+        code: "RENDERER_CHART_BINDING_INVALID",
+        message: `${this.messages.chartEditInvalidBinding} (${fieldLabel})`,
+        area: "renderer",
+        recoverable: true
+      });
+    }
+    return parsed - 1;
+  }
+
+  private parseChartColumnIndexListInput(raw: string, fieldLabel: string): number[] | undefined {
+    const normalized = raw.trim();
+    if (!normalized) {
+      return undefined;
+    }
+    const parts = normalized
+      .split(/[,\s;]+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (!parts.length) {
+      return undefined;
+    }
+    const unique: number[] = [];
+    for (const part of parts) {
+      if (!/^\d+$/.test(part)) {
+        throw new SpreadsheetOperationError({
+          code: "RENDERER_CHART_BINDING_INVALID",
+          message: `${this.messages.chartEditInvalidBinding} (${fieldLabel})`,
+          area: "renderer",
+          recoverable: true
+        });
+      }
+      const parsed = Number(part);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new SpreadsheetOperationError({
+          code: "RENDERER_CHART_BINDING_INVALID",
+          message: `${this.messages.chartEditInvalidBinding} (${fieldLabel})`,
+          area: "renderer",
+          recoverable: true
+        });
+      }
+      const normalizedIndex = parsed - 1;
+      if (!unique.includes(normalizedIndex)) {
+        unique.push(normalizedIndex);
+      }
+    }
+    return unique.length ? unique : undefined;
+  }
+
+  private areChartSeriesColumnsEqual(left: number[] | undefined, right: number[] | undefined): boolean {
+    if (!left?.length && !right?.length) {
+      return true;
+    }
+    if (!left || !right || left.length !== right.length) {
+      return false;
+    }
+    return left.every((value, index) => value === right[index]);
+  }
+
+  private areChartBindingOptionsEqual(left: ChartBindingOptions | undefined, right: ChartBindingOptions): boolean {
+    if (!left) {
+      return false;
+    }
+    return (
+      left.rangeAddress === right.rangeAddress &&
+      left.orientation === right.orientation &&
+      left.firstRowAsHeader === right.firstRowAsHeader &&
+      left.firstColumnAsLabel === right.firstColumnAsLabel &&
+      left.autoRefresh === right.autoRefresh &&
+      left.categoryColumnIndex === right.categoryColumnIndex &&
+      left.valueColumnIndex === right.valueColumnIndex &&
+      this.areChartSeriesColumnsEqual(left.seriesColumnIndexes, right.seriesColumnIndexes)
+    );
   }
 
   private isChartActionEnabled(action: ChartToolbarAction): boolean {
@@ -5664,12 +5894,26 @@ export class DomSpreadsheetRenderer {
       this.chartEditTypeSelect.append(option);
     }
 
+    const binding = this.getChartBindingOptions(selectedChart);
     this.chartEditTypeSelect.value = selectedChart.type;
     if (document.activeElement !== this.chartEditRangeInput) {
-      this.chartEditRangeInput.value = selectedChart.sourceRange?.rangeAddress ?? "";
+      this.chartEditRangeInput.value = binding?.rangeAddress ?? "";
     }
     if (document.activeElement !== this.chartEditTitleInput) {
       this.chartEditTitleInput.value = selectedChart.title ?? "";
+    }
+    this.chartEditOrientationSelect.value = binding?.orientation ?? "rows";
+    this.chartEditFirstRowHeaderToggle.checked = binding?.firstRowAsHeader ?? true;
+    this.chartEditFirstColumnLabelToggle.checked = binding?.firstColumnAsLabel ?? true;
+    this.chartEditAutoRefreshToggle.checked = binding?.autoRefresh ?? true;
+    if (document.activeElement !== this.chartEditCategoryColumnInput) {
+      this.chartEditCategoryColumnInput.value = this.formatChartColumnIndexInput(binding?.categoryColumnIndex);
+    }
+    if (document.activeElement !== this.chartEditSeriesColumnsInput) {
+      this.chartEditSeriesColumnsInput.value = this.formatChartColumnIndexListInput(binding?.seriesColumnIndexes);
+    }
+    if (document.activeElement !== this.chartEditValueColumnInput) {
+      this.chartEditValueColumnInput.value = this.formatChartColumnIndexInput(binding?.valueColumnIndex);
     }
     if (document.activeElement !== this.chartEditXAxisTitleInput) {
       this.chartEditXAxisTitleInput.value = this.getChartAxisTitle(selectedChart, "x");
@@ -5682,6 +5926,7 @@ export class DomSpreadsheetRenderer {
     this.chartEditXAxisVisibleToggle.checked = this.getChartAxisVisible(selectedChart, "x");
     this.chartEditYAxisVisibleToggle.checked = this.getChartAxisVisible(selectedChart, "y");
     this.chartEditLegendToggle.checked = this.getChartLegendVisible(selectedChart);
+    this.chartEditValueColumnInput.disabled = !(selectedChart.type === "pie" || selectedChart.type === "donut");
   }
 
   private applyChartEditPanelChanges(): void {
@@ -5705,9 +5950,28 @@ export class DomSpreadsheetRenderer {
     const nextXAxisVisible = this.chartEditXAxisVisibleToggle.checked;
     const nextYAxisVisible = this.chartEditYAxisVisibleToggle.checked;
     const nextRangeInput = this.chartEditRangeInput.value.trim().toUpperCase().replace(/\s+/g, "");
+    const nextOrientation = this.chartEditOrientationSelect.value === "columns" ? "columns" : "rows";
+    const nextFirstRowAsHeader = this.chartEditFirstRowHeaderToggle.checked;
+    const nextFirstColumnAsLabel = this.chartEditFirstColumnLabelToggle.checked;
+    const nextAutoRefresh = this.chartEditAutoRefreshToggle.checked;
+    const nextCategoryColumnInput = this.chartEditCategoryColumnInput.value;
+    const nextSeriesColumnsInput = this.chartEditSeriesColumnsInput.value;
+    const nextValueColumnInput = this.chartEditValueColumnInput.value;
     let refreshFromSourceRange = false;
 
     try {
+      const nextCategoryColumnIndex = this.parseChartColumnIndexInput(
+        nextCategoryColumnInput,
+        this.messages.chartEditCategoryColumnLabel
+      );
+      const nextSeriesColumnIndexes = this.parseChartColumnIndexListInput(
+        nextSeriesColumnsInput,
+        this.messages.chartEditSeriesColumnsLabel
+      );
+      const nextValueColumnIndex = this.parseChartColumnIndexInput(
+        nextValueColumnInput,
+        this.messages.chartEditValueColumnLabel
+      );
       if (nextType && nextType !== chart.type) {
         if (!this.isChartTypeEnabled(nextType)) {
           this.engine.reportChartUnsupportedFeature(sheet.id, selectedChartId, `chart-type:${nextType}`);
@@ -5776,8 +6040,10 @@ export class DomSpreadsheetRenderer {
         chart = this.engine.getChart(sheet.id, selectedChartId) ?? chart;
       }
 
-      if (nextRangeInput) {
-        const parsedRange = this.parseChartRangeAddress(nextRangeInput);
+      const currentBinding = this.getChartBindingOptions(chart);
+      const rangeInputForBinding = nextRangeInput || currentBinding?.rangeAddress;
+      if (rangeInputForBinding) {
+        const parsedRange = this.parseChartRangeAddress(rangeInputForBinding);
         if (!parsedRange) {
           this.setChartFeedback(sheet.id, this.messages.chartEditInvalidRange, true);
           this.render();
@@ -5795,17 +6061,22 @@ export class DomSpreadsheetRenderer {
           return;
         }
         const normalizedRangeAddress = this.buildChartRangeAddress(parsedRange);
-        const sourceRange = chart.sourceRange;
-        if (sourceRange?.rangeAddress !== normalizedRangeAddress) {
+        const nextBinding: ChartBindingOptions = {
+          rangeAddress: normalizedRangeAddress,
+          orientation: nextOrientation,
+          firstRowAsHeader: nextFirstRowAsHeader,
+          firstColumnAsLabel: nextFirstColumnAsLabel,
+          autoRefresh: nextAutoRefresh,
+          categoryColumnIndex: nextCategoryColumnIndex,
+          seriesColumnIndexes: nextSeriesColumnIndexes,
+          valueColumnIndex: nextValueColumnIndex
+        };
+        if (!this.areChartBindingOptionsEqual(currentBinding, nextBinding)) {
           this.engine.changeChartRange({
             sheetId: sheet.id,
             chartId: selectedChartId,
             sourceRange: {
-              rangeAddress: normalizedRangeAddress,
-              orientation: sourceRange?.orientation ?? "rows",
-              firstRowAsHeader: sourceRange?.firstRowAsHeader ?? true,
-              firstColumnAsLabel: sourceRange?.firstColumnAsLabel ?? true,
-              autoRefresh: sourceRange?.autoRefresh ?? true
+              ...nextBinding
             }
           });
           chart = this.engine.getChart(sheet.id, selectedChartId) ?? chart;
@@ -5913,9 +6184,15 @@ export class DomSpreadsheetRenderer {
         recoverable: true
       });
     }
+    const configuredSeriesCount = Array.isArray(binding.seriesColumnIndexes)
+      ? binding.seriesColumnIndexes.filter(
+          (columnIndex) => Number.isInteger(columnIndex) && columnIndex >= 0 && columnIndex < headers.length
+        ).length
+      : undefined;
     const estimatedSeriesCount = Math.max(
       1,
-      binding.orientation === "columns" ? dataRows.length : headers.length - (binding.firstColumnAsLabel ? 1 : 0)
+      configuredSeriesCount ??
+        (binding.orientation === "columns" ? dataRows.length : headers.length - (binding.firstColumnAsLabel ? 1 : 0))
     );
     const estimatedPointCount = dataRows.length * headers.length;
     if (estimatedSeriesCount > chartLimits.maxSeriesPerChart) {
@@ -5959,20 +6236,110 @@ export class DomSpreadsheetRenderer {
     };
   }
 
+  private resolveChartCategoryColumnIndex(rangeInput: SpreadsheetRangeInput, binding: ChartBindingOptions): number {
+    const resolved =
+      Number.isInteger(binding.categoryColumnIndex) && (binding.categoryColumnIndex as number) >= 0
+        ? (binding.categoryColumnIndex as number)
+        : 0;
+    if (resolved < 0 || resolved >= rangeInput.headers.length) {
+      throw new SpreadsheetOperationError({
+        code: "RENDERER_CHART_BINDING_INVALID",
+        message: this.messages.chartEditInvalidBinding,
+        area: "renderer",
+        recoverable: true
+      });
+    }
+    return resolved;
+  }
+
+  private resolveChartSeriesColumnIndexes(
+    rangeInput: SpreadsheetRangeInput,
+    binding: ChartBindingOptions,
+    categoryColumnIndex: number
+  ): number[] | undefined {
+    const configured = binding.seriesColumnIndexes;
+    if (!configured?.length) {
+      return undefined;
+    }
+    const normalized: number[] = [];
+    for (const index of configured) {
+      if (!Number.isInteger(index) || index < 0 || index >= rangeInput.headers.length) {
+        throw new SpreadsheetOperationError({
+          code: "RENDERER_CHART_BINDING_INVALID",
+          message: this.messages.chartEditInvalidBinding,
+          area: "renderer",
+          recoverable: true
+        });
+      }
+      if (index === categoryColumnIndex) {
+        continue;
+      }
+      if (!normalized.includes(index)) {
+        normalized.push(index);
+      }
+    }
+    if (!normalized.length) {
+      throw new SpreadsheetOperationError({
+        code: "RENDERER_CHART_BINDING_INVALID",
+        message: this.messages.chartEditInvalidBinding,
+        area: "renderer",
+        recoverable: true
+      });
+    }
+    return normalized;
+  }
+
   private buildPieLikeFigure(
     rangeInput: SpreadsheetRangeInput,
     chartType: "pie" | "donut",
     title: string,
-    firstColumnAsLabel: boolean
+    binding: ChartBindingOptions
   ): WorksheetChartObject["figure"] {
-    const labelColumnIndex = firstColumnAsLabel ? 0 : -1;
-    const valueColumnStart = firstColumnAsLabel ? 1 : 0;
-    let valueColumnIndex = -1;
-    for (let index = valueColumnStart; index < rangeInput.headers.length; index += 1) {
-      const hasNumeric = rangeInput.rows.some((row) => toNumericValue((row[index] ?? null) as CellPrimitive) !== undefined);
-      if (hasNumeric) {
-        valueColumnIndex = index;
-        break;
+    const width = rangeInput.headers.length;
+    const labelColumnIndex =
+      Number.isInteger(binding.categoryColumnIndex) && (binding.categoryColumnIndex as number) >= 0
+        ? (binding.categoryColumnIndex as number)
+        : binding.firstColumnAsLabel
+          ? 0
+          : -1;
+    if (labelColumnIndex >= width) {
+      throw new SpreadsheetOperationError({
+        code: "RENDERER_CHART_BINDING_INVALID",
+        message: this.messages.chartEditInvalidBinding,
+        area: "renderer",
+        recoverable: true
+      });
+    }
+    let valueColumnIndex =
+      Number.isInteger(binding.valueColumnIndex) && (binding.valueColumnIndex as number) >= 0
+        ? (binding.valueColumnIndex as number)
+        : -1;
+    if (valueColumnIndex >= width) {
+      throw new SpreadsheetOperationError({
+        code: "RENDERER_CHART_BINDING_INVALID",
+        message: this.messages.chartEditInvalidBinding,
+        area: "renderer",
+        recoverable: true
+      });
+    }
+    if (valueColumnIndex >= 0 && valueColumnIndex === labelColumnIndex) {
+      throw new SpreadsheetOperationError({
+        code: "RENDERER_CHART_BINDING_INVALID",
+        message: this.messages.chartEditInvalidBinding,
+        area: "renderer",
+        recoverable: true
+      });
+    }
+    if (valueColumnIndex < 0) {
+      for (let index = 0; index < width; index += 1) {
+        if (index === labelColumnIndex) {
+          continue;
+        }
+        const hasNumeric = rangeInput.rows.some((row) => toNumericValue((row[index] ?? null) as CellPrimitive) !== undefined);
+        if (hasNumeric) {
+          valueColumnIndex = index;
+          break;
+        }
       }
     }
 
@@ -6043,13 +6410,18 @@ export class DomSpreadsheetRenderer {
     const rangeInput = this.createSpreadsheetRangeInput(input.sheetId, input.sourceRange, input.binding);
 
     if (input.chartType === "pie" || input.chartType === "donut") {
-      return this.buildPieLikeFigure(rangeInput, input.chartType, input.title, input.binding.firstColumnAsLabel);
+      return this.buildPieLikeFigure(rangeInput, input.chartType, input.title, input.binding);
     }
+
+    const categoryColumnIndex = this.resolveChartCategoryColumnIndex(rangeInput, input.binding);
+    const seriesColumnIndexes = this.resolveChartSeriesColumnIndexes(rangeInput, input.binding, categoryColumnIndex);
 
     if (input.chartType === "area") {
       const base = createFigureFromSpreadsheetRange(rangeInput, {
         title: input.title,
-        traceType: "line"
+        traceType: "line",
+        xColumn: categoryColumnIndex,
+        seriesColumns: seriesColumnIndexes
       });
       const figure = this.toWorksheetChartFigure(base);
       figure.data = figure.data.map((trace, index) => {
@@ -6074,7 +6446,9 @@ export class DomSpreadsheetRenderer {
           : "line";
     const base = createFigureFromSpreadsheetRange(rangeInput, {
       title: input.title,
-      traceType
+      traceType,
+      xColumn: categoryColumnIndex,
+      seriesColumns: seriesColumnIndexes
     });
     const figure = this.toWorksheetChartFigure(base);
     if (input.placeholderMode) {
@@ -6371,7 +6745,10 @@ export class DomSpreadsheetRenderer {
           orientation: chart.sourceRange.orientation,
           firstRowAsHeader: chart.sourceRange.firstRowAsHeader,
           firstColumnAsLabel: chart.sourceRange.firstColumnAsLabel,
-          autoRefresh: chart.sourceRange.autoRefresh
+          autoRefresh: chart.sourceRange.autoRefresh,
+          categoryColumnIndex: chart.sourceRange.categoryColumnIndex,
+          seriesColumnIndexes: chart.sourceRange.seriesColumnIndexes ? [...chart.sourceRange.seriesColumnIndexes] : undefined,
+          valueColumnIndex: chart.sourceRange.valueColumnIndex
         },
         title: chart.title ?? "Chart",
         placeholderMode
@@ -6730,6 +7107,338 @@ export class DomSpreadsheetRenderer {
     };
   }
 
+  private getFigureLayoutRecord(figure: ChartFigureInput): Record<string, unknown> {
+    return typeof figure.layout === "object" && figure.layout !== null
+      ? ({ ...(figure.layout as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  }
+
+  private getFigureAxisConfig(
+    layout: Record<string, unknown>,
+    axis: "x" | "y",
+    secondary = false
+  ): Record<string, unknown> | undefined {
+    const keys =
+      axis === "x"
+        ? secondary
+          ? ["xAxis2", "xaxis2"]
+          : ["xAxis", "xaxis"]
+        : secondary
+          ? ["yAxis2", "yaxis2"]
+          : ["yAxis", "yaxis"];
+    for (const key of keys) {
+      const candidate = layout[key];
+      if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+        return candidate as Record<string, unknown>;
+      }
+    }
+    return undefined;
+  }
+
+  private getFigureAxisType(layout: Record<string, unknown>, axis: "x" | "y", secondary = false): ChartAxisLayoutType {
+    const axisConfig = this.getFigureAxisConfig(layout, axis, secondary);
+    const rawType = typeof axisConfig?.type === "string" ? axisConfig.type.trim().toLowerCase() : "";
+    if (
+      rawType === "linear" ||
+      rawType === "category" ||
+      rawType === "date" ||
+      rawType === "log" ||
+      rawType === "multicategory"
+    ) {
+      return rawType;
+    }
+    return axis === "x" ? "category" : "linear";
+  }
+
+  private hasFigureAxisTitle(layout: Record<string, unknown>, axis: "x" | "y", secondary = false): boolean {
+    const axisConfig = this.getFigureAxisConfig(layout, axis, secondary);
+    if (!axisConfig) {
+      return false;
+    }
+    const title = axisConfig.title;
+    if (typeof title === "string") {
+      return title.trim().length > 0;
+    }
+    if (title && typeof title === "object") {
+      const text = (title as Record<string, unknown>).text;
+      return typeof text === "string" && text.trim().length > 0;
+    }
+    return false;
+  }
+
+  private appendRuntimeSampleValues(target: unknown[], source: unknown, maxSamples = 72): void {
+    if (!Array.isArray(source) || source.length === 0 || target.length >= maxSamples) {
+      return;
+    }
+    const remaining = maxSamples - target.length;
+    if (source.length <= remaining) {
+      for (const value of source) {
+        target.push(value);
+      }
+      return;
+    }
+    const step = Math.max(1, Math.floor(source.length / remaining));
+    for (let index = 0; index < source.length && target.length < maxSamples; index += step) {
+      target.push(source[index]);
+    }
+    if (target.length < maxSamples) {
+      target.push(source[source.length - 1]);
+    }
+  }
+
+  private collectRuntimeAxisSampleValues(figure: ChartFigureInput, axis: "x" | "y", secondary = false): unknown[] {
+    const traces = Array.isArray(figure.data) ? figure.data : [];
+    const values: unknown[] = [];
+    for (const trace of traces) {
+      if (!trace || typeof trace !== "object" || Array.isArray(trace)) {
+        continue;
+      }
+      const record = trace as Record<string, unknown>;
+      const axisRefKey = axis === "x" ? "xAxisRef" : "yAxisRef";
+      const axisRefValue = typeof record[axisRefKey] === "string" ? (record[axisRefKey] as string).toLowerCase() : "";
+      const belongsToSecondary = axis === "x" ? axisRefValue === "x2" : axisRefValue === "y2";
+      if (secondary ? !belongsToSecondary : belongsToSecondary) {
+        continue;
+      }
+      const candidates =
+        axis === "x"
+          ? [record.x, record.labels]
+          : [record.y, record.values, record.open, record.close, record.high, record.low, record.z];
+      for (const candidate of candidates) {
+        this.appendRuntimeSampleValues(values, candidate, 72);
+      }
+      if (values.length >= 72) {
+        break;
+      }
+    }
+    return values;
+  }
+
+  private formatRuntimeAxisSampleLabel(value: unknown, axisType: ChartAxisLayoutType): string {
+    if (value == null) {
+      return "";
+    }
+    if (axisType === "date") {
+      const timestamp =
+        value instanceof Date
+          ? value.getTime()
+          : typeof value === "number"
+            ? value
+            : Date.parse(String(value).trim());
+      if (Number.isFinite(timestamp)) {
+        const date = new Date(timestamp);
+        if (!Number.isNaN(date.getTime())) {
+          const year = date.getUTCFullYear();
+          const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+          const day = String(date.getUTCDate()).padStart(2, "0");
+          return `${year}-${month}-${day}`;
+        }
+      }
+    }
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) {
+        return "";
+      }
+      const absolute = Math.abs(value);
+      if (absolute >= 1000) {
+        return value.toFixed(0);
+      }
+      if (absolute >= 100) {
+        return value.toFixed(1);
+      }
+      return value.toFixed(2);
+    }
+    if (value instanceof Date) {
+      const year = value.getUTCFullYear();
+      const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(value.getUTCDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+    if (typeof value === "boolean") {
+      return value ? "TRUE" : "FALSE";
+    }
+    return this.sanitizeChartText(String(value).trim(), 48);
+  }
+
+  private estimateRuntimeAxisLabelChars(
+    figure: ChartFigureInput,
+    axisType: ChartAxisLayoutType,
+    axis: "x" | "y",
+    secondary = false
+  ): number {
+    const values = this.collectRuntimeAxisSampleValues(figure, axis, secondary);
+    let maxChars = axisType === "date" ? 10 : 4;
+    for (const value of values) {
+      const label = this.formatRuntimeAxisSampleLabel(value, axisType);
+      if (label) {
+        maxChars = Math.max(maxChars, label.length);
+      }
+    }
+    return clampNumeric(maxChars, 4, 24);
+  }
+
+  private estimateRuntimePointCount(figure: ChartFigureInput): number {
+    const traces = Array.isArray(figure.data) ? figure.data : [];
+    let maxPoints = 0;
+    for (const trace of traces) {
+      if (!trace || typeof trace !== "object" || Array.isArray(trace)) {
+        continue;
+      }
+      const record = trace as Record<string, unknown>;
+      const candidateLengths = [
+        record.x,
+        record.y,
+        record.values,
+        record.labels,
+        record.z,
+        record.open,
+        record.close,
+        record.high,
+        record.low
+      ]
+        .filter(Array.isArray)
+        .map((candidate) => (candidate as unknown[]).length);
+      for (const length of candidateLengths) {
+        maxPoints = Math.max(maxPoints, length);
+      }
+    }
+    return maxPoints;
+  }
+
+  private hasBarLikeRuntimeTraces(figure: ChartFigureInput): boolean {
+    const traces = Array.isArray(figure.data) ? figure.data : [];
+    for (const trace of traces) {
+      if (!trace || typeof trace !== "object" || Array.isArray(trace)) {
+        continue;
+      }
+      const type = typeof (trace as Record<string, unknown>).type === "string" ? ((trace as Record<string, unknown>).type as string) : "";
+      const normalized = type.trim().toLowerCase();
+      if (
+        normalized === "bar" ||
+        normalized === "histogram" ||
+        normalized === "waterfall" ||
+        normalized === "candlestick" ||
+        normalized === "ohlc" ||
+        normalized === "funnel" ||
+        normalized === "box" ||
+        normalized === "violin"
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private estimateRuntimeVirtualSize(figure: ChartFigureInput, width: number, height: number): { width: number; height: number } {
+    const safeWidth = Math.max(1, Math.round(toFiniteNumber(width, CHART_MIN_WIDTH)));
+    const safeHeight = Math.max(1, Math.round(toFiniteNumber(height, CHART_MIN_HEIGHT)));
+    const pointCount = this.estimateRuntimePointCount(figure);
+    const axisLayout = this.getFigureLayoutRecord(figure);
+    const xAxisType = this.getFigureAxisType(axisLayout, "x", false);
+    const hasBarLike = this.hasBarLikeRuntimeTraces(figure);
+    const pixelsPerPoint =
+      hasBarLike || xAxisType === "category" || xAxisType === "multicategory" || xAxisType === "date" ? 36 : 20;
+
+    let virtualWidth = safeWidth;
+    if (pointCount > 12) {
+      const estimatedWidth = Math.round(pointCount * pixelsPerPoint + 180);
+      const maxVirtualWidth = Math.max(safeWidth, Math.min(9600, Math.max(safeWidth * 6, 3200)));
+      virtualWidth = Math.min(maxVirtualWidth, Math.max(safeWidth, estimatedWidth));
+    }
+
+    const seriesCount = Array.isArray(figure.data) ? figure.data.length : 0;
+    let virtualHeight = safeHeight;
+    if (seriesCount > 8) {
+      const extraHeight = Math.min(480, (seriesCount - 8) * 14);
+      virtualHeight = Math.max(safeHeight, safeHeight + extraHeight);
+    }
+    if (xAxisType === "multicategory") {
+      virtualHeight = Math.max(virtualHeight, safeHeight + 42);
+    }
+
+    return {
+      width: Math.max(1, Math.round(virtualWidth)),
+      height: Math.max(1, Math.round(virtualHeight))
+    };
+  }
+
+  private resolveRuntimeFigureMargins(
+    figure: ChartFigureInput,
+    width: number,
+    height: number
+  ): { top: number; right: number; bottom: number; left: number } {
+    const layout = this.getFigureLayoutRecord(figure);
+    const rawMargin = layout.margin;
+    const margin = rawMargin && typeof rawMargin === "object" ? (rawMargin as Record<string, unknown>) : {};
+    const currentTop = Math.max(0, Math.round(toFiniteNumber(margin.top, 56)));
+    const currentRight = Math.max(0, Math.round(toFiniteNumber(margin.right, 24)));
+    const currentBottom = Math.max(0, Math.round(toFiniteNumber(margin.bottom, 48)));
+    const currentLeft = Math.max(0, Math.round(toFiniteNumber(margin.left, 56)));
+
+    const xAxisType = this.getFigureAxisType(layout, "x", false);
+    const yAxisType = this.getFigureAxisType(layout, "y", false);
+    const yAxis2Type = this.getFigureAxisType(layout, "y", true);
+    const yChars = this.estimateRuntimeAxisLabelChars(figure, yAxisType, "y", false);
+    const y2Chars = this.estimateRuntimeAxisLabelChars(figure, yAxis2Type, "y", true);
+    const xChars = this.estimateRuntimeAxisLabelChars(figure, xAxisType, "x", false);
+    const hasYTitle = this.hasFigureAxisTitle(layout, "y", false);
+    const hasY2Title = this.hasFigureAxisTitle(layout, "y", true);
+    const hasXTitle = this.hasFigureAxisTitle(layout, "x", false);
+    const hasY2Values = this.collectRuntimeAxisSampleValues(figure, "y", true).length > 0;
+
+    let left = Math.max(
+      currentLeft,
+      yAxisType === "date" ? 92 : 68,
+      Math.min(148, 18 + yChars * 7 + (hasYTitle ? 18 : 0))
+    );
+    let right = Math.max(currentRight, hasY2Values ? Math.min(132, 14 + y2Chars * 7 + (hasY2Title ? 16 : 0)) : 24);
+    let bottom = Math.max(
+      currentBottom,
+      xAxisType === "multicategory" ? 90 : xAxisType === "date" ? 70 : 50,
+      Math.min(126, 18 + xChars * 6 + (hasXTitle ? 18 : 0))
+    );
+    let top = Math.max(currentTop, typeof layout.title === "string" && layout.title.trim() ? 64 : 40);
+
+    const minPlotWidth = 120;
+    if (width - left - right < minPlotWidth) {
+      const overflow = minPlotWidth - (width - left - right);
+      const reducibleLeft = Math.max(0, left - 56);
+      const reduceLeft = Math.min(reducibleLeft, Math.ceil(overflow * 0.65));
+      left -= reduceLeft;
+      const remainingOverflow = overflow - reduceLeft;
+      right -= Math.min(Math.max(0, right - 20), remainingOverflow);
+    }
+    const minPlotHeight = 96;
+    if (height - top - bottom < minPlotHeight) {
+      const overflow = minPlotHeight - (height - top - bottom);
+      const reducibleBottom = Math.max(0, bottom - 40);
+      const reduceBottom = Math.min(reducibleBottom, Math.ceil(overflow * 0.7));
+      bottom -= reduceBottom;
+      const remainingOverflow = overflow - reduceBottom;
+      top -= Math.min(Math.max(0, top - 24), remainingOverflow);
+    }
+
+    return {
+      top: Math.max(24, Math.round(top)),
+      right: Math.max(18, Math.round(right)),
+      bottom: Math.max(40, Math.round(bottom)),
+      left: Math.max(56, Math.round(left))
+    };
+  }
+
+  private withRuntimeFigureSize(figure: ChartFigureInput, width: number, height: number): ChartFigureInput {
+    const safeWidth = Math.max(1, Math.round(toFiniteNumber(width, CHART_MIN_WIDTH)));
+    const safeHeight = Math.max(1, Math.round(toFiniteNumber(height, CHART_MIN_HEIGHT)));
+    const layout = this.getFigureLayoutRecord(figure);
+    layout.width = safeWidth;
+    layout.height = safeHeight;
+    layout.margin = this.resolveRuntimeFigureMargins(figure, safeWidth, safeHeight);
+    return {
+      ...figure,
+      layout: layout as ChartFigureInput["layout"]
+    };
+  }
+
   private destroyChartRuntime(chartId: string): void {
     const runtime = this.chartRuntimeById.get(chartId);
     if (!runtime) {
@@ -6759,20 +7468,27 @@ export class DomSpreadsheetRenderer {
     if (width < 32 || height < 32) {
       return false;
     }
-    const figureInput = this.toChartFigureInput(chart.figure);
+    const baseFigure = this.toChartFigureInput(chart.figure);
+    const runtimeSize = this.estimateRuntimeVirtualSize(baseFigure, width, height);
+    const figureInput = this.withRuntimeFigureSize(baseFigure, runtimeSize.width, runtimeSize.height);
     if (!Array.isArray(figureInput.data) || figureInput.data.length === 0) {
       return false;
     }
     const runtimeHost = body.querySelector<HTMLElement>("[data-chart-runtime-host='true']") ?? document.createElement("div");
     runtimeHost.dataset.chartRuntimeHost = "true";
     runtimeHost.className = "excelsior-chart-runtime-host";
+    runtimeHost.style.width = `${runtimeSize.width}px`;
+    runtimeHost.style.height = `${runtimeSize.height}px`;
+    runtimeHost.style.minWidth = `${Math.max(1, Math.round(width))}px`;
+    runtimeHost.style.minHeight = `${Math.max(1, Math.round(height))}px`;
+    body.classList.toggle("is-scrollable", runtimeSize.width > width || runtimeSize.height > height);
     if (!runtimeHost.isConnected) {
       body.replaceChildren(runtimeHost);
     }
     const runtimeSignature = JSON.stringify({
       figure: figureInput,
-      width: Math.round(width),
-      height: Math.round(height)
+      width: runtimeSize.width,
+      height: runtimeSize.height
     });
     const existingRuntime = this.chartRuntimeById.get(chart.id);
     if (!existingRuntime) {
@@ -6903,6 +7619,7 @@ export class DomSpreadsheetRenderer {
       if (shouldSkipPreview) {
         object.classList.add("is-offscreen");
         this.destroyChartRuntime(chart.id);
+        body.classList.remove("is-scrollable");
         body.replaceChildren();
         const placeholder = document.createElement("div");
         placeholder.className = "excelsior-chart-preview-placeholder";
@@ -6917,11 +7634,13 @@ export class DomSpreadsheetRenderer {
           const rendered = this.renderChartEngineFigure(body, chart);
           if (!rendered) {
             this.destroyChartRuntime(chart.id);
+            body.classList.remove("is-scrollable");
             this.renderChartPreview(body, chart);
           }
           this.updateChartRenderStatus(sheet.id, chart.id, "rendered", undefined, Date.now() - renderStartedAt);
         } catch (error) {
           this.destroyChartRuntime(chart.id);
+          body.classList.remove("is-scrollable");
           this.engine.reportChartError({
             sheetId: sheet.id,
             chartId: chart.id,
@@ -6985,7 +7704,13 @@ export class DomSpreadsheetRenderer {
       return;
     }
 
-    const mode: ChartInteractionState["mode"] = target?.closest("[data-chart-resize='true']") ? "resize" : "move";
+    const resizeHandle = target?.closest("[data-chart-resize='true']");
+    const moveHandle = target?.closest("[data-chart-move='true']");
+    if (!resizeHandle && !moveHandle) {
+      return;
+    }
+
+    const mode: ChartInteractionState["mode"] = resizeHandle ? "resize" : "move";
     const originRect = this.resolveChartRect(chart.position, metrics.rowOffsets, metrics.colOffsets, metrics.rowCount, metrics.colCount);
     this.chartInteraction = {
       mode,
