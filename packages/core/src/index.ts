@@ -2,12 +2,21 @@ export { WorkbookEngine } from "./workbook-engine";
 export { CommandBus } from "./command-bus";
 export { PluginManager } from "./plugins/plugin-manager";
 export { AddSheetCommand } from "./commands/add-sheet-command";
+export { ChangeChartLegendCommand } from "./commands/change-chart-legend-command";
+export { ChangeChartRangeCommand } from "./commands/change-chart-range-command";
+export { ChangeChartTitleCommand } from "./commands/change-chart-title-command";
+export { ChangeChartTypeCommand } from "./commands/change-chart-type-command";
+export { CreateChartCommand } from "./commands/create-chart-command";
 export { DeleteAxisCommand } from "./commands/delete-axis-command";
+export { DeleteChartCommand } from "./commands/delete-chart-command";
 export { DeleteSheetCommand } from "./commands/delete-sheet-command";
 export { InsertAxisCommand } from "./commands/insert-axis-command";
+export { MoveChartCommand } from "./commands/move-chart-command";
+export { ResizeChartCommand } from "./commands/resize-chart-command";
 export { SetCellValueCommand } from "./commands/set-cell-value-command";
 export { SelectRangeCommand } from "./commands/select-range-command";
 export { UpdateSheetOperationsCommand } from "./commands/update-sheet-operations-command";
+export { UpdateChartCommand } from "./commands/update-chart-command";
 export { applyOperationsToWorkbook } from "./utils/apply-operations";
 export { getConditionalFormattingStyle } from "./conditional-formatting/evaluator";
 export { buildPivotSheet, buildPivotSheetAsync, inferPivotSheetInput } from "./pivot/engine";
@@ -51,6 +60,9 @@ export type {
   CellPrimitive,
   CellRange,
   CellStyle,
+  ChartFigureSnapshot,
+  ChartPosition,
+  ChartRangeBinding,
   ClipboardPolicy,
   ColumnSchema,
   CommandResult,
@@ -74,6 +86,9 @@ export type {
   SafeCellValidator,
   SheetModel,
   SheetMerge,
+  WorksheetChartObject,
+  WorksheetChartObjectInput,
+  WorksheetChartType,
   SpreadsheetError,
   SpreadsheetEventMap,
   SpreadsheetOperation,

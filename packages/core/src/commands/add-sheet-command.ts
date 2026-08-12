@@ -22,6 +22,7 @@ const createSheetModel = (
     start: { row: 0, col: 0 },
     end: { row: 0, col: 0 }
   },
+  charts: cloneValue(input?.charts ?? []),
   metadata: cloneValue(input?.metadata ?? {})
 });
 

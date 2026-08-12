@@ -14,6 +14,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      "@excelsior/charts": path.resolve(rootDir, "packages/charts/src/index.ts"),
       "@excelsior/core": path.resolve(rootDir, "packages/core/src/index.ts"),
       "@excelsior/devtools": path.resolve(rootDir, "packages/devtools/src/index.ts"),
       "@excelsior/formulas": path.resolve(rootDir, "packages/formulas/src/index.ts"),

@@ -19,6 +19,7 @@
     "build": "tsup src/index.ts --format esm,cjs --dts"
   },
   "dependencies": {
+    "@excelsior/charts": "0.1.0",
     "@excelsior/core": "0.1.0"
   }
 }

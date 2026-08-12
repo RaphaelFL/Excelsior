@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  cellAddressToLabel,
   defaultPivotModule,
   ServerSideRowModel,
   ViewportRowModel,
@@ -68,6 +69,19 @@ describe("DomSpreadsheetRenderer", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
+  const dispatchMouse = (target: EventTarget | null | undefined, type: string, init: MouseEventInit) => {
+    if (!target) {
+      return;
+    }
+    target.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        ...init
+      })
+    );
+  };
+
   const waitForActiveSheetName = async (engine: WorkbookEngine, expectedName: string) => {
     for (let attempt = 0; attempt < 10; attempt += 1) {
       if (engine.getActiveSheet().name === expectedName) {
@@ -101,6 +115,104 @@ describe("DomSpreadsheetRenderer", () => {
 
     container.querySelector<HTMLButtonElement>("[data-action='add-sheet']")?.click();
     expect(engine.getSnapshot().sheets).toHaveLength(3);
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("renders row headers and keeps the grid offset from the gutter", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Rows",
+            rowCount: 4,
+            columnCount: 2,
+            cells: {
+              "0:0": { value: "Cliente", computedValue: "Cliente" },
+              "1:0": { value: "Delta", computedValue: "Delta" },
+              "2:0": { value: "Omega", computedValue: "Omega" }
+            }
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const headers = Array.from(container.querySelectorAll<HTMLElement>(".excelsior-row-header"));
+    const firstCell = container.querySelector<HTMLElement>("[data-row='0'][data-col='0']");
+
+    expect(headers.slice(0, 3).map((header) => header.textContent)).toEqual(["1", "2", "3"]);
+    expect(Number.parseFloat(firstCell?.style.left ?? "0")).toBeGreaterThanOrEqual(56);
+
+    headers[2]?.click();
+    expect(engine.getActiveSheet().selection.end.row).toBe(2);
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("selects the full sheet when the top-left corner is clicked", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Select All",
+            rowCount: 6,
+            columnCount: 4
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    container.querySelector<HTMLButtonElement>("[data-corner-action='select-all']")?.click();
+
+    expect(engine.getActiveSheet().selection.start).toEqual({ row: 0, col: 0 });
+    expect(engine.getActiveSheet().selection.end).toEqual({ row: 5, col: 3 });
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("renders column headers for columns beyond L", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Wide",
+            rowCount: 4,
+            columnCount: 16
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    const headerM = container.querySelector<HTMLElement>("[data-column-header-col='12']");
+    const headerP = container.querySelector<HTMLElement>("[data-column-header-col='15']");
+
+    expect(headerM?.textContent).toBe("M");
+    expect(headerP?.textContent).toBe("P");
 
     renderer.dispose();
     container.remove();
@@ -1136,7 +1248,7 @@ describe("DomSpreadsheetRenderer", () => {
     expect(topFrozen?.classList.contains("is-frozen-row")).toBe(true);
     expect(leftFrozen?.classList.contains("is-frozen-column")).toBe(true);
     expect(topFrozen?.style.top).toBe("120px");
-    expect(leftFrozen?.style.left).toBe("180px");
+    expect(leftFrozen?.style.left).toBe("236px");
 
     renderer.dispose();
     container.remove();
@@ -2151,5 +2263,903 @@ describe("DomSpreadsheetRenderer", () => {
       renderer.dispose();
       container.remove();
     }
+  });
+
+  it("creates a chart object from the selected range using the toolbar", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Sales",
+            rowCount: 8,
+            columnCount: 4,
+            cells: {
+              "0:0": { value: "Month", computedValue: "Month" },
+              "0:1": { value: "North", computedValue: "North" },
+              "0:2": { value: "South", computedValue: "South" },
+              "1:0": { value: "Jan", computedValue: "Jan" },
+              "1:1": { value: 10, computedValue: 10 },
+              "1:2": { value: 8, computedValue: 8 },
+              "2:0": { value: "Feb", computedValue: "Feb" },
+              "2:1": { value: 14, computedValue: 14 },
+              "2:2": { value: 9, computedValue: 9 },
+              "3:0": { value: "Mar", computedValue: "Mar" },
+              "3:1": { value: 18, computedValue: 18 },
+              "3:2": { value: 12, computedValue: 12 }
+            },
+            merges: [],
+            columns: {},
+            rows: {}
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: 3,
+        colEnd: 2
+      });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+
+      const charts = engine.getCharts(sheet.id);
+      expect(charts).toHaveLength(1);
+      expect(charts[0]?.type).toBe("line");
+      expect(charts[0]?.sourceRange?.rangeAddress).toBe("A1:C4");
+      expect(container.querySelector<HTMLElement>(`[data-chart-id='${charts[0]?.id ?? ""}']`)).not.toBeNull();
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("recomputes the chart figure when source cells are updated", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Forecast",
+            rowCount: 8,
+            columnCount: 4,
+            cells: {
+              "0:0": { value: "Month", computedValue: "Month" },
+              "0:1": { value: "Value", computedValue: "Value" },
+              "1:0": { value: "Jan", computedValue: "Jan" },
+              "1:1": { value: 100, computedValue: 100 },
+              "2:0": { value: "Feb", computedValue: "Feb" },
+              "2:1": { value: 120, computedValue: 120 },
+              "3:0": { value: "Mar", computedValue: "Mar" },
+              "3:1": { value: 130, computedValue: 130 }
+            },
+            merges: [],
+            columns: {},
+            rows: {}
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: 3,
+        colEnd: 1
+      });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+      const chart = engine.getCharts(sheet.id)[0]!;
+      const originalTrace = chart.figure.data[0] as { y?: unknown };
+      expect(Array.isArray(originalTrace.y) ? originalTrace.y[0] : undefined).toBe(100);
+
+      engine.setCellValue({
+        sheetId: sheet.id,
+        row: 1,
+        col: 1,
+        value: 250
+      });
+
+      const refreshed = engine.getChart(sheet.id, chart.id)!;
+      const refreshedTrace = refreshed.figure.data[0] as { y?: unknown };
+      expect(Array.isArray(refreshedTrace.y) ? refreshedTrace.y[0] : undefined).toBe(250);
+      expect(refreshed.state.lastRenderedAt).toBeTypeOf("number");
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("supports moving, resizing and deleting chart objects from the sheet", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Ops",
+            rowCount: 10,
+            columnCount: 4,
+            cells: {
+              "0:0": { value: "Day", computedValue: "Day" },
+              "0:1": { value: "Tickets", computedValue: "Tickets" },
+              "1:0": { value: "Mon", computedValue: "Mon" },
+              "1:1": { value: 12, computedValue: 12 },
+              "2:0": { value: "Tue", computedValue: "Tue" },
+              "2:1": { value: 8, computedValue: 8 },
+              "3:0": { value: "Wed", computedValue: "Wed" },
+              "3:1": { value: 16, computedValue: 16 }
+            },
+            merges: [],
+            columns: {},
+            rows: {}
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: 3,
+        colEnd: 1
+      });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-column']")?.click();
+      const chartId = engine.getCharts(sheet.id)[0]?.id as string;
+      const chartBefore = engine.getChart(sheet.id, chartId)!;
+
+      const chartElement = container.querySelector<HTMLElement>(`[data-chart-id='${chartId}']`);
+      dispatchMouse(chartElement?.querySelector(".excelsior-chart-object-header"), "mousedown", {
+        button: 0,
+        clientX: 280,
+        clientY: 180
+      });
+      dispatchMouse(globalThis, "mousemove", {
+        button: 0,
+        clientX: 340,
+        clientY: 240
+      });
+      dispatchMouse(globalThis, "mouseup", {
+        button: 0,
+        clientX: 340,
+        clientY: 240
+      });
+
+      const moved = engine.getChart(sheet.id, chartId)!;
+      expect(
+        moved.position.fromCell !== chartBefore.position.fromCell ||
+          moved.position.offsetX !== chartBefore.position.offsetX ||
+          moved.position.offsetY !== chartBefore.position.offsetY
+      ).toBe(true);
+
+      const resizeHandle = container.querySelector<HTMLElement>(`[data-chart-id='${chartId}'] [data-chart-resize='true']`);
+      const widthBefore = moved.position.width;
+      const heightBefore = moved.position.height;
+      dispatchMouse(resizeHandle, "mousedown", {
+        button: 0,
+        clientX: 520,
+        clientY: 360
+      });
+      dispatchMouse(globalThis, "mousemove", {
+        button: 0,
+        clientX: 600,
+        clientY: 420
+      });
+      dispatchMouse(globalThis, "mouseup", {
+        button: 0,
+        clientX: 600,
+        clientY: 420
+      });
+
+      const resized = engine.getChart(sheet.id, chartId)!;
+      expect(resized.position.width).toBeGreaterThanOrEqual(widthBefore);
+      expect(resized.position.height).toBeGreaterThanOrEqual(heightBefore);
+
+      container.querySelector<HTMLButtonElement>(`[data-chart-id='${chartId}'] [data-chart-action='delete']`)?.click();
+      expect(engine.getCharts(sheet.id)).toHaveLength(0);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("edits selected charts from the panel and emits selection events", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Panel",
+            rowCount: 12,
+            columnCount: 4,
+            cells: {
+              "0:0": { value: "Month", computedValue: "Month" },
+              "0:1": { value: "Revenue", computedValue: "Revenue" },
+              "1:0": { value: "Jan", computedValue: "Jan" },
+              "1:1": { value: 120, computedValue: 120 },
+              "2:0": { value: "Feb", computedValue: "Feb" },
+              "2:1": { value: 180, computedValue: 180 },
+              "3:0": { value: "Mar", computedValue: "Mar" },
+              "3:1": { value: 90, computedValue: 90 }
+            },
+            merges: [],
+            columns: {},
+            rows: {}
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const selectedEvents: string[] = [];
+    const unselectedEvents: string[] = [];
+    engine.on("chart:selected", ({ chartId }) => selectedEvents.push(chartId));
+    engine.on("chart:unselected", ({ chartId }) => unselectedEvents.push(chartId));
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: 3,
+        colEnd: 1
+      });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+
+      const chartId = engine.getCharts(sheet.id)[0]?.id as string;
+      expect(selectedEvents).toContain(chartId);
+
+      container.querySelector<HTMLElement>("[data-row='1'][data-col='1']")?.click();
+      expect(unselectedEvents).toContain(chartId);
+
+      container.querySelector<HTMLElement>(`[data-chart-id='${chartId}'] .excelsior-chart-object-header`)?.click();
+      const panel = container.querySelector<HTMLElement>(".excelsior-chart-edit-panel");
+      expect(panel?.hidden).toBe(false);
+
+      const titleInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='title']");
+      const typeSelect = panel?.querySelector<HTMLSelectElement>("[data-chart-role='type']");
+      const rangeInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='range']");
+      const legendToggle = panel?.querySelector<HTMLInputElement>("[data-chart-role='legend']");
+      titleInput!.value = "Receita Trimestral";
+      titleInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      typeSelect!.value = "bar";
+      typeSelect?.dispatchEvent(new Event("input", { bubbles: true }));
+      rangeInput!.value = "A1:B3";
+      rangeInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      legendToggle!.checked = false;
+      legendToggle?.dispatchEvent(new Event("input", { bubbles: true }));
+      panel?.querySelector<HTMLButtonElement>("[data-chart-action='apply']")?.click();
+
+      const edited = engine.getChart(sheet.id, chartId);
+      expect(edited?.type).toBe("bar");
+      expect(edited?.title).toBe("Receita Trimestral");
+      expect(edited?.sourceRange?.rangeAddress).toBe("A1:B3");
+      expect((edited?.figure.layout as { legend?: { visible?: boolean } } | undefined)?.legend?.visible).toBe(false);
+      expect(selectedEvents.filter((value) => value === chartId).length).toBeGreaterThan(1);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("renders chart categories and disables in-development chart actions", () => {
+    const container = document.createElement("div");
+    container.style.width = "1000px";
+    container.style.height = "520px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      expect(container.querySelector("[data-chart-category='common']")).not.toBeNull();
+      expect(container.querySelector("[data-chart-category='statistical']")).not.toBeNull();
+      expect(container.querySelector("[data-chart-category='financial']")).not.toBeNull();
+      expect(container.querySelector("[data-chart-category='advanced']")).not.toBeNull();
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-candlestick']")?.disabled).toBe(true);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-surface3d']")?.disabled).toBe(true);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("updates axis titles from chart edit panel", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Axis",
+            rowCount: 12,
+            columnCount: 3,
+            cells: {
+              "0:0": { value: "M", computedValue: "M" },
+              "0:1": { value: "V", computedValue: "V" },
+              "1:0": { value: "Jan", computedValue: "Jan" },
+              "1:1": { value: 10, computedValue: 10 },
+              "2:0": { value: "Feb", computedValue: "Feb" },
+              "2:1": { value: 12, computedValue: 12 }
+            }
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: 2,
+        colEnd: 1
+      });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+      const chartId = engine.getCharts(sheet.id)[0]?.id as string;
+      container.querySelector<HTMLElement>(`[data-chart-id='${chartId}'] .excelsior-chart-object-header`)?.click();
+      const panel = container.querySelector<HTMLElement>(".excelsior-chart-edit-panel");
+      const xAxisInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='x-axis-title']");
+      const yAxisInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='y-axis-title']");
+      const xAxisTypeSelect = panel?.querySelector<HTMLSelectElement>("[data-chart-role='x-axis-type']");
+      const yAxisTypeSelect = panel?.querySelector<HTMLSelectElement>("[data-chart-role='y-axis-type']");
+      const xAxisVisibleToggle = panel?.querySelector<HTMLInputElement>("[data-chart-role='x-axis-visible']");
+      const yAxisVisibleToggle = panel?.querySelector<HTMLInputElement>("[data-chart-role='y-axis-visible']");
+      xAxisInput!.value = "Período";
+      xAxisInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      yAxisInput!.value = "Receita";
+      yAxisInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      xAxisTypeSelect!.value = "category";
+      xAxisTypeSelect?.dispatchEvent(new Event("input", { bubbles: true }));
+      yAxisTypeSelect!.value = "log";
+      yAxisTypeSelect?.dispatchEvent(new Event("input", { bubbles: true }));
+      xAxisVisibleToggle!.checked = false;
+      xAxisVisibleToggle?.dispatchEvent(new Event("input", { bubbles: true }));
+      yAxisVisibleToggle!.checked = true;
+      yAxisVisibleToggle?.dispatchEvent(new Event("input", { bubbles: true }));
+      panel?.querySelector<HTMLButtonElement>("[data-chart-action='apply']")?.click();
+
+      const chart = engine.getChart(sheet.id, chartId);
+      const layout = chart?.figure.layout as
+        | {
+            xAxis?: { title?: string; type?: string; visible?: boolean };
+            yAxis?: { title?: string; type?: string; visible?: boolean };
+          }
+        | undefined;
+      expect(layout?.xAxis?.title).toBe("Período");
+      expect(layout?.yAxis?.title).toBe("Receita");
+      expect(layout?.xAxis?.type).toBe("category");
+      expect(layout?.yAxis?.type).toBe("log");
+      expect(layout?.xAxis?.visible).toBe(false);
+      expect(layout?.yAxis?.visible).toBe(true);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("supports optional chart preview before insertion", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Preview",
+            rowCount: 10,
+            columnCount: 4,
+            cells: {
+              "0:0": { value: "Month", computedValue: "Month" },
+              "0:1": { value: "Revenue", computedValue: "Revenue" },
+              "1:0": { value: "Jan", computedValue: "Jan" },
+              "1:1": { value: 120, computedValue: 120 },
+              "2:0": { value: "Feb", computedValue: "Feb" },
+              "2:1": { value: 180, computedValue: 180 }
+            },
+            merges: [],
+            columns: {},
+            rows: {}
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine, {
+      chartInsertPreview: true
+    });
+    const sheet = engine.getActiveSheet();
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: 2,
+        colEnd: 1
+      });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+      expect(engine.getCharts(sheet.id)).toHaveLength(0);
+      const previewPanel = container.querySelector<HTMLElement>(".excelsior-chart-preview-panel");
+      expect(previewPanel?.hidden).toBe(false);
+      previewPanel?.querySelector<HTMLButtonElement>("[data-chart-action='preview-insert']")?.click();
+      expect(engine.getCharts(sheet.id)).toHaveLength(1);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("sanitizes malicious chart edit payloads from the panel", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Security",
+            rowCount: 12,
+            columnCount: 3,
+            cells: {
+              "0:0": { value: "M", computedValue: "M" },
+              "0:1": { value: "V", computedValue: "V" },
+              "1:0": { value: "Jan", computedValue: "Jan" },
+              "1:1": { value: 10, computedValue: 10 },
+              "2:0": { value: "Feb", computedValue: "Feb" },
+              "2:1": { value: 12, computedValue: 12 }
+            }
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: 2,
+        colEnd: 1
+      });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+      const chartId = engine.getCharts(sheet.id)[0]?.id as string;
+      container.querySelector<HTMLElement>(`[data-chart-id='${chartId}'] .excelsior-chart-object-header`)?.click();
+
+      const panel = container.querySelector<HTMLElement>(".excelsior-chart-edit-panel");
+      const titleInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='title']");
+      const xAxisInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='x-axis-title']");
+      const yAxisInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='y-axis-title']");
+      titleInput!.value = "<svg onload=alert(1)>";
+      titleInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      xAxisInput!.value = "=cmd|' /C calc'!A0";
+      xAxisInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      yAxisInput!.value = "<script>alert('x')</script>";
+      yAxisInput?.dispatchEvent(new Event("input", { bubbles: true }));
+      panel?.querySelector<HTMLButtonElement>("[data-chart-action='apply']")?.click();
+
+      const chart = engine.getChart(sheet.id, chartId);
+      expect(chart?.title).not.toContain("<");
+      expect(chart?.title).not.toContain(">");
+      const layout = chart?.figure.layout as
+        | {
+            xAxis?: { title?: string };
+            yAxis?: { title?: string };
+          }
+        | undefined;
+      expect(layout?.xAxis?.title?.startsWith("'")).toBe(true);
+      expect(layout?.yAxis?.title).not.toContain("<");
+      expect(layout?.yAxis?.title).not.toContain(">");
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it.each([
+    { cells: 1000, maxRangeCells: 100000, shouldCreate: true, maxMs: 8000 },
+    { cells: 10000, maxRangeCells: 100000, shouldCreate: true, maxMs: 26000 },
+    { cells: 100000, maxRangeCells: 50000, shouldCreate: false, maxMs: 8000 }
+  ])(
+    "handles chart creation for $cells selected cells",
+    ({ cells, maxRangeCells, shouldCreate, maxMs }) => {
+    const container = document.createElement("div");
+    container.style.width = "1200px";
+    container.style.height = "700px";
+    document.body.append(container);
+    const rowCount = Math.floor(cells / 2);
+    const blockedReasons: string[] = [];
+    const engine = new WorkbookEngine(
+      {
+        settings: {
+          maxRows: Math.max(2000, rowCount + 10),
+          maxColumns: 20
+        },
+        data: [
+          {
+            name: "RangePerf",
+            rowCount: Math.max(10, rowCount + 1),
+            columnCount: 3,
+            cells: {
+              "0:0": { value: "X", computedValue: "X" },
+              "0:1": { value: "Y", computedValue: "Y" },
+              "1:0": { value: 1, computedValue: 1 },
+              "1:1": { value: 2, computedValue: 2 }
+            },
+            merges: [],
+            columns: {},
+            rows: {}
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    engine.on("security:blocked-input", ({ reason }) => blockedReasons.push(reason));
+    const renderer = new DomSpreadsheetRenderer(container, engine, {
+      chartLimits: {
+        maxRangeCells,
+        maxSeriesPerChart: 128,
+        maxPointsPerChart: 200000
+      }
+    });
+    const sheet = engine.getActiveSheet();
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: rowCount - 1,
+        colEnd: 1
+      });
+      const startedAt = Date.now();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+      const elapsedMs = Date.now() - startedAt;
+      if (shouldCreate) {
+        expect(engine.getCharts(sheet.id)).toHaveLength(1);
+      } else {
+        expect(engine.getCharts(sheet.id)).toHaveLength(0);
+        expect(blockedReasons).toContain("chart-range-too-large");
+      }
+      expect(elapsedMs).toBeLessThan(maxMs);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+    },
+    30000
+  );
+
+  it("blocks oversized ranges for chart creation and reports security", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        settings: {
+          maxRows: 1000,
+          maxColumns: 1000
+        },
+        data: [
+          {
+            name: "Big",
+            rowCount: 400,
+            columnCount: 400,
+            cells: {}
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const securityReasons: string[] = [];
+    engine.on("security:blocked-input", ({ reason }) => securityReasons.push(reason));
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        colStart: 0,
+        rowEnd: 399,
+        colEnd: 399
+      });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+      expect(engine.getCharts(sheet.id)).toHaveLength(0);
+      expect(securityReasons).toContain("chart-range-too-large");
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("emits render lifecycle events and skips offscreen chart previews", () => {
+    const container = document.createElement("div");
+    container.style.width = "700px";
+    container.style.height = "420px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Render",
+            rowCount: 200,
+            columnCount: 40,
+            cells: {
+              "0:0": { value: "X", computedValue: "X" },
+              "0:1": { value: "Y", computedValue: "Y" },
+              "1:0": { value: 1, computedValue: 1 },
+              "1:1": { value: 2, computedValue: 2 }
+            }
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const sheet = engine.getActiveSheet();
+    const renderStarted: string[] = [];
+    const renderFinished: string[] = [];
+    const renderSkipped: string[] = [];
+    engine.on("chart:renderStarted", ({ chartId }) => renderStarted.push(chartId));
+    engine.on("chart:renderFinished", ({ chartId }) => renderFinished.push(chartId));
+    engine.on("chart:renderSkipped", ({ reason }) => renderSkipped.push(reason));
+
+    engine.createChart({
+      sheetId: sheet.id,
+      chart: {
+        id: "chart-visible",
+        type: "line",
+        title: "Visible",
+        sourceRange: {
+          rangeAddress: "A1:B2",
+          orientation: "rows",
+          firstRowAsHeader: true,
+          firstColumnAsLabel: true,
+          autoRefresh: true
+        },
+        figure: {
+          data: [{ type: "line", x: [1, 2], y: [2, 3] }],
+          layout: { title: "Visible" }
+        },
+        position: {
+          fromCell: "C2",
+          toCell: "I12",
+          offsetX: 0,
+          offsetY: 0,
+          width: 300,
+          height: 180
+        },
+        state: {
+          selected: false,
+          visible: true,
+          locked: false
+        }
+      }
+    });
+    engine.createChart({
+      sheetId: sheet.id,
+      chart: {
+        id: "chart-offscreen",
+        type: "line",
+        title: "Offscreen",
+        sourceRange: {
+          rangeAddress: "A1:B2",
+          orientation: "rows",
+          firstRowAsHeader: true,
+          firstColumnAsLabel: true,
+          autoRefresh: true
+        },
+        figure: {
+          data: [{ type: "line", x: [1, 2], y: [2, 4] }],
+          layout: { title: "Offscreen" }
+        },
+        position: {
+          fromCell: "Z80",
+          toCell: "AF96",
+          offsetX: 0,
+          offsetY: 0,
+          width: 320,
+          height: 200
+        },
+        state: {
+          selected: false,
+          visible: true,
+          locked: false
+        }
+      }
+    });
+
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    try {
+      expect(renderStarted).toContain("chart-visible");
+      expect(renderFinished).toContain("chart-visible");
+      expect(renderSkipped).toContain("outside-viewport");
+      expect(container.querySelector("[data-chart-id='chart-offscreen'].is-offscreen")).not.toBeNull();
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it.each([1, 5, 10, 25, 50])("keeps viewport stable with %i chart objects", (chartCount) => {
+    const container = document.createElement("div");
+    container.style.width = "1200px";
+    container.style.height = "700px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        settings: {
+          maxRows: 2000,
+          maxColumns: 200
+        },
+        data: [
+          {
+            id: "sheet-perf",
+            name: "Perf",
+            rowCount: 300,
+            columnCount: 40,
+            cells: {
+              "0:0": { value: "X", computedValue: "X" },
+              "0:1": { value: "Y", computedValue: "Y" },
+              "1:0": { value: 1, computedValue: 1 },
+              "1:1": { value: 2, computedValue: 2 },
+              "2:0": { value: 2, computedValue: 2 },
+              "2:1": { value: 4, computedValue: 4 }
+            },
+            merges: [],
+            columns: {},
+            rows: {}
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const sheet = engine.getActiveSheet();
+    for (let index = 0; index < chartCount; index += 1) {
+      const rowBase = 2 + index * 2;
+      const colBase = (index % 8) * 4;
+      engine.createChart({
+        sheetId: sheet.id,
+        chart: {
+          id: `chart-perf-${index}`,
+          type: "line",
+          title: `Perf ${index}`,
+          sourceRange: {
+            rangeAddress: "A1:B3",
+            orientation: "rows",
+            firstRowAsHeader: true,
+            firstColumnAsLabel: true,
+            autoRefresh: true
+          },
+          figure: {
+            data: [
+              {
+                type: "line",
+                x: [1, 2],
+                y: [index + 1, index + 2]
+              }
+            ],
+            layout: {
+              title: `Perf ${index}`
+            }
+          },
+          position: {
+            fromCell: cellAddressToLabel({ row: rowBase, col: colBase }),
+            toCell: cellAddressToLabel({ row: rowBase + 6, col: colBase + 3 }),
+            offsetX: 0,
+            offsetY: 0,
+            width: 220,
+            height: 150,
+            zIndex: index + 1
+          },
+          state: {
+            selected: false,
+            visible: true,
+            locked: false
+          }
+        }
+      });
+    }
+
+    const renderer = new DomSpreadsheetRenderer(container, engine, {
+      chartPerformance: {
+        skipOffscreenPreview: true
+      }
+    });
+    try {
+      const objects = container.querySelectorAll(".excelsior-chart-object");
+      expect(objects.length).toBe(chartCount);
+      const viewport = container.querySelector<HTMLElement>(".excelsior-viewport");
+      viewport!.scrollTop = 1200;
+      viewport?.dispatchEvent(new Event("scroll"));
+      expect(container.querySelectorAll(".excelsior-chart-object").length).toBe(chartCount);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("releases chart runtimes and caches on dispose", () => {
+    const container = document.createElement("div");
+    container.style.width = "900px";
+    container.style.height = "560px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Cleanup",
+            rowCount: 8,
+            columnCount: 4,
+            cells: {
+              "0:0": { value: "X", computedValue: "X" },
+              "0:1": { value: "Y", computedValue: "Y" },
+              "1:0": { value: 1, computedValue: 1 },
+              "1:1": { value: 2, computedValue: 2 }
+            }
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+    engine.selectRange({
+      sheetId: sheet.id,
+      rowStart: 0,
+      colStart: 0,
+      rowEnd: 2,
+      colEnd: 1
+    });
+    container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.click();
+    const rendererState = renderer as unknown as {
+      chartRuntimeById: Map<string, unknown>;
+      chartObjectElementById: Map<string, unknown>;
+      chartBodyElementById: Map<string, unknown>;
+    };
+    expect(rendererState.chartObjectElementById.size).toBeGreaterThan(0);
+    renderer.dispose();
+    expect(rendererState.chartRuntimeById.size).toBe(0);
+    expect(rendererState.chartObjectElementById.size).toBe(0);
+    expect(rendererState.chartBodyElementById.size).toBe(0);
+    expect(container.childElementCount).toBe(0);
+    container.remove();
   });
 });

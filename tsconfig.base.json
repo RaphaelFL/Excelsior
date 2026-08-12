@@ -16,6 +16,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
+      "@excelsior/charts": ["packages/charts/src/index.ts"],
       "@excelsior/core": ["packages/core/src/index.ts"],
       "@excelsior/devtools": ["packages/devtools/src/index.ts"],
       "@excelsior/formulas": ["packages/formulas/src/index.ts"],

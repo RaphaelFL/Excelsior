@@ -795,6 +795,348 @@ describe("WorkbookEngine", () => {
     expect(engine.getColumnSchema(sheet.id, 2)?.hidden).toBeUndefined();
   });
 
+  it("creates and updates embedded chart objects with undoable commands", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const createdEvents: Array<{ chartId: string; sheetId: string }> = [];
+    const movedEvents: Array<{ chartId: string; x: number; y: number }> = [];
+    const resizedEvents: Array<{ chartId: string; width: number; height: number }> = [];
+    const deletedEvents: string[] = [];
+    const selectedEvents: string[] = [];
+    const unselectedEvents: string[] = [];
+
+    engine.on("chart:created", ({ chartId, sheetId }) => createdEvents.push({ chartId, sheetId }));
+    engine.on("chart:moved", ({ chartId, position }) => movedEvents.push({ chartId, x: position.offsetX, y: position.offsetY }));
+    engine.on("chart:resized", ({ chartId, position }) =>
+      resizedEvents.push({ chartId, width: position.width, height: position.height })
+    );
+    engine.on("chart:deleted", ({ chartId }) => deletedEvents.push(chartId));
+    engine.on("chart:selected", ({ chartId }) => selectedEvents.push(chartId));
+    engine.on("chart:unselected", ({ chartId }) => unselectedEvents.push(chartId));
+
+    const createOperations = engine.createChart({
+      sheetId: sheet.id,
+      chart: {
+        type: "line",
+        title: "Revenue",
+        figure: {
+          data: [
+            {
+              type: "line",
+              x: ["Jan", "Fev", "Mar"],
+              y: [10, 20, 15]
+            }
+          ]
+        },
+        sourceRange: {
+          rangeAddress: "A1:B4",
+          orientation: "columns",
+          firstRowAsHeader: true,
+          firstColumnAsLabel: true,
+          autoRefresh: true
+        },
+        position: {
+          fromCell: "D2",
+          offsetX: 12,
+          offsetY: 18,
+          width: 360,
+          height: 220
+        }
+      }
+    });
+
+    expect(createOperations[0]).toMatchObject({
+      op: "add",
+      id: sheet.id,
+      path: ["charts", 0]
+    });
+    expect(createdEvents).toHaveLength(1);
+
+    const createdChart = engine.getCharts(sheet.id)[0];
+    expect(createdChart?.sourceRange?.chartId).toBe(createdChart?.id);
+    expect(createdChart?.sourceRange?.sheetId).toBe(sheet.id);
+
+    if (!createdChart) {
+      throw new Error("Expected created chart.");
+    }
+
+    engine.moveChart({
+      sheetId: sheet.id,
+      chartId: createdChart.id,
+      position: {
+        fromCell: "E3",
+        toCell: "K16",
+        offsetX: 20,
+        offsetY: 32,
+        zIndex: 5
+      }
+    });
+    engine.resizeChart({
+      sheetId: sheet.id,
+      chartId: createdChart.id,
+      position: {
+        width: 420,
+        height: 260,
+        toCell: "L18"
+      }
+    });
+    engine.changeChartType({
+      sheetId: sheet.id,
+      chartId: createdChart.id,
+      chartType: "bar"
+    });
+    engine.changeChartTitle({
+      sheetId: sheet.id,
+      chartId: createdChart.id,
+      title: "Revenue by Month"
+    });
+    engine.changeChartLegend({
+      sheetId: sheet.id,
+      chartId: createdChart.id,
+      visible: false
+    });
+    engine.changeChartRange({
+      sheetId: sheet.id,
+      chartId: createdChart.id,
+      sourceRange: {
+        rangeAddress: "A1:C8",
+        orientation: "columns",
+        firstRowAsHeader: true,
+        firstColumnAsLabel: true,
+        autoRefresh: true
+      }
+    });
+
+    const updated = engine.getChart(sheet.id, createdChart.id);
+    expect(updated).toMatchObject({
+      type: "bar",
+      title: "Revenue by Month",
+      position: {
+        fromCell: "E3",
+        toCell: "L18",
+        offsetX: 20,
+        offsetY: 32,
+        width: 420,
+        height: 260,
+        zIndex: 5
+      },
+      sourceRange: {
+        rangeAddress: "A1:C8"
+      }
+    });
+    expect(movedEvents.at(-1)).toMatchObject({
+      chartId: createdChart.id,
+      x: 20,
+      y: 32
+    });
+    expect(resizedEvents.at(-1)).toMatchObject({
+      chartId: createdChart.id,
+      width: 420,
+      height: 260
+    });
+
+    engine.updateChart({
+      sheetId: sheet.id,
+      chartId: createdChart.id,
+      patch: {
+        state: {
+          ...createdChart.state,
+          selected: true
+        }
+      }
+    });
+    expect(selectedEvents.at(-1)).toBe(createdChart.id);
+
+    engine.deleteChart({ sheetId: sheet.id, chartId: createdChart.id });
+    expect(engine.getCharts(sheet.id)).toHaveLength(0);
+    expect(deletedEvents).toContain(createdChart.id);
+    expect(unselectedEvents.at(-1)).toBe(createdChart.id);
+
+    expect(engine.undo()).toBe(true);
+    expect(engine.getCharts(sheet.id)).toHaveLength(1);
+  });
+
+  it("emits range binding updates only for charts affected by changed cells", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const rangeEvents: Array<{ chartId: string; reason: string; range: string }> = [];
+
+    engine.on("chart:rangeChanged", ({ chartId, reason, range }) => {
+      rangeEvents.push({ chartId, reason, range: range.rangeAddress });
+    });
+
+    engine.createChart({
+      sheetId: sheet.id,
+      chart: {
+        type: "line",
+        figure: {
+          data: [{ type: "line", x: ["A", "B"], y: [1, 2] }]
+        },
+        sourceRange: {
+          rangeAddress: "A1:B3",
+          orientation: "columns",
+          firstRowAsHeader: true,
+          firstColumnAsLabel: true,
+          autoRefresh: true
+        },
+        position: {
+          fromCell: "E2",
+          offsetX: 0,
+          offsetY: 0,
+          width: 300,
+          height: 180
+        }
+      }
+    });
+
+    const chart = engine.getCharts(sheet.id)[0];
+    expect(chart).toBeDefined();
+    expect(rangeEvents.at(-1)).toMatchObject({
+      chartId: chart?.id,
+      reason: "binding-updated",
+      range: "A1:B3"
+    });
+
+    rangeEvents.splice(0);
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 1, value: 99 });
+    expect(rangeEvents).toEqual([
+      {
+        chartId: chart!.id,
+        reason: "source-cells-updated",
+        range: "A1:B3"
+      }
+    ]);
+
+    engine.setCellValue({ sheetId: sheet.id, row: 8, col: 8, value: 77 });
+    expect(rangeEvents).toHaveLength(1);
+  });
+
+  it("emits chart import/export and runtime diagnostic events", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const imported: string[] = [];
+    const exported: string[] = [];
+    const unsupported: string[] = [];
+    const renderStarted: string[] = [];
+    const renderFinished: string[] = [];
+    const renderSkipped: string[] = [];
+    const chartErrors: string[] = [];
+    engine.on("chart:imported", ({ chartId }) => imported.push(chartId));
+    engine.on("chart:exported", ({ chartId }) => exported.push(chartId));
+    engine.on("chart:unsupportedFeature", ({ feature }) => unsupported.push(feature));
+    engine.on("chart:renderStarted", ({ chartId }) => renderStarted.push(chartId));
+    engine.on("chart:renderFinished", ({ chartId }) => renderFinished.push(chartId));
+    engine.on("chart:renderSkipped", ({ reason }) => renderSkipped.push(reason));
+    engine.on("chart:error", ({ errorCode }) => chartErrors.push(errorCode));
+
+    const snapshot = engine.toJSON();
+    snapshot.sheets[0]!.charts = [
+      {
+        id: "chart-imported-1",
+        sheetId: sheet.id,
+        type: "surface3d",
+        title: "3D chart",
+        sourceRange: {
+          chartId: "chart-imported-1",
+          sheetId: sheet.id,
+          rangeAddress: "A1:B3",
+          orientation: "rows",
+          firstRowAsHeader: true,
+          firstColumnAsLabel: true,
+          autoRefresh: true
+        },
+        figure: {
+          data: [],
+          layout: {}
+        },
+        position: {
+          fromCell: "C2",
+          toCell: "H14",
+          offsetX: 0,
+          offsetY: 0,
+          width: 320,
+          height: 220,
+          zIndex: 1
+        },
+        state: {
+          selected: false,
+          visible: true,
+          locked: false
+        },
+        excelInterop: {
+          unsupportedFeatures: ["type:surface3d"]
+        }
+      }
+    ];
+    engine.loadFromJSON(snapshot);
+    expect(imported).toContain("chart-imported-1");
+    expect(unsupported).toContain("type:surface3d");
+
+    const exportedSnapshot = engine.toJSON({ emitChartExportEvents: true });
+    expect(exportedSnapshot.sheets[0]?.charts).toHaveLength(1);
+    expect(exported).toContain("chart-imported-1");
+
+    engine.reportChartRenderStarted(sheet.id, "chart-imported-1");
+    engine.reportChartRenderFinished(sheet.id, "chart-imported-1", 12);
+    engine.reportChartRenderSkipped(sheet.id, "chart-imported-1", "outside-viewport");
+    engine.reportChartError({
+      sheetId: sheet.id,
+      chartId: "chart-imported-1",
+      errorCode: "TEST_CHART_ERROR",
+      message: "Synthetic error"
+    });
+
+    expect(renderStarted).toContain("chart-imported-1");
+    expect(renderFinished).toContain("chart-imported-1");
+    expect(renderSkipped).toContain("outside-viewport");
+    expect(chartErrors).toContain("TEST_CHART_ERROR");
+  });
+
+  it("emits controlled chart data warnings for invalid range bindings", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const dataInvalidEvents: Array<{ chartId: string; reason: string }> = [];
+
+    engine.on("chart:dataInvalid", ({ chartId, reason }) => {
+      dataInvalidEvents.push({ chartId, reason });
+    });
+
+    engine.createChart({
+      sheetId: sheet.id,
+      chart: {
+        type: "bar",
+        figure: {
+          data: [{ type: "bar", x: ["A", "B"], y: [3, 4] }]
+        },
+        sourceRange: {
+          rangeAddress: "A1::B3",
+          orientation: "columns",
+          firstRowAsHeader: true,
+          firstColumnAsLabel: true,
+          autoRefresh: true
+        },
+        position: {
+          fromCell: "C2",
+          offsetX: 0,
+          offsetY: 0,
+          width: 280,
+          height: 180
+        }
+      }
+    });
+
+    const chart = engine.getCharts(sheet.id)[0];
+    if (!chart) {
+      throw new Error("Expected chart for invalid range test.");
+    }
+
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: 1 });
+    expect(dataInvalidEvents.at(-1)).toMatchObject({
+      chartId: chart.id
+    });
+    expect(dataInvalidEvents.at(-1)?.reason).toContain("Invalid chart range");
+  });
+
   it("creates a client-side pivot sheet as a derived view", () => {
     const engine = new WorkbookEngine({
       data: [

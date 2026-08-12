@@ -46,4 +46,5 @@ Esta wiki descreve como usar a superficie publica atual do monorepo Excelsior. O
 
 - API publica resumida existente: [../docs/api.md](../docs/api.md)
 - Plugin engine: [../docs/plugin-engine.md](../docs/plugin-engine.md)
+- Aceite ACP charts+excel web: [../docs/charts-acceptance-report.md](../docs/charts-acceptance-report.md)
 - Checklist de release: [../docs/release-checklist.md](../docs/release-checklist.md)

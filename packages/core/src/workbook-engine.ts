@@ -1,10 +1,19 @@
 import { CommandBus } from "./command-bus";
 import { AddSheetCommand } from "./commands/add-sheet-command";
+import { ChangeChartLegendCommand } from "./commands/change-chart-legend-command";
+import { ChangeChartRangeCommand } from "./commands/change-chart-range-command";
+import { ChangeChartTitleCommand } from "./commands/change-chart-title-command";
+import { ChangeChartTypeCommand } from "./commands/change-chart-type-command";
+import { CreateChartCommand } from "./commands/create-chart-command";
 import { DeleteAxisCommand } from "./commands/delete-axis-command";
+import { DeleteChartCommand } from "./commands/delete-chart-command";
 import { DeleteSheetCommand } from "./commands/delete-sheet-command";
 import { InsertAxisCommand } from "./commands/insert-axis-command";
+import { MoveChartCommand } from "./commands/move-chart-command";
+import { ResizeChartCommand } from "./commands/resize-chart-command";
 import { SetCellValueCommand } from "./commands/set-cell-value-command";
 import { SelectRangeCommand } from "./commands/select-range-command";
+import { UpdateChartCommand } from "./commands/update-chart-command";
 import { UpdateSheetOperationsCommand } from "./commands/update-sheet-operations-command";
 import { CellValidationError } from "./validation/cell-validation-error";
 import type {
@@ -17,6 +26,8 @@ import type {
   CellStyle,
   CellValidationConfig,
   CellValidationResult,
+  ChartPosition,
+  ChartRangeBinding,
   ColumnSchema,
   ConditionalFormattingRule,
   FormulaEngine,
@@ -30,6 +41,9 @@ import type {
   RowSchema,
   SafeCellValidator,
   SheetMerge,
+  WorksheetChartObject,
+  WorksheetChartObjectInput,
+  WorksheetChartType,
   SpreadsheetEventMap,
   SpreadsheetOperation,
   WorkbookConfig,
@@ -41,6 +55,7 @@ import { TypedEventEmitter } from "./events/typed-event-emitter";
 import { HistoryManager } from "./history/history-manager";
 import { PluginManager } from "./plugins/plugin-manager";
 import type { GridPlugin, PluginState, RegisteredGridPlugin } from "./plugins/types";
+import { cellLabelToAddress } from "./utils/address";
 import { createId } from "./utils/id";
 import { cloneValue } from "./utils/clone";
 import { getCellKey } from "./utils/cell-key";
@@ -186,6 +201,30 @@ const parseCellKey = (key: string): CellAddress | undefined => {
   };
 };
 
+const parseChartRangeAddress = (address: string): CellRange | undefined => {
+  const normalizedAddress = address.trim();
+  if (!normalizedAddress) {
+    return undefined;
+  }
+  const withoutSheetRef = normalizedAddress.includes("!") ? normalizedAddress.slice(normalizedAddress.lastIndexOf("!") + 1) : normalizedAddress;
+  const parts = withoutSheetRef.split(":").map((part) => part.trim());
+  if (parts.length === 0 || parts.length > 2) {
+    return undefined;
+  }
+  const startLabel = parts[0];
+  const endLabel = parts[1];
+  if (!startLabel || (parts.length === 2 && !endLabel)) {
+    return undefined;
+  }
+  try {
+    const start = cellLabelToAddress(startLabel);
+    const end = endLabel ? cellLabelToAddress(endLabel) : start;
+    return normalizeRange(start, end);
+  } catch {
+    return undefined;
+  }
+};
+
 const createWorkbook = (config: WorkbookConfig): WorkbookModel => {
   const settings: WorkbookSettings = {
     ...DEFAULT_SETTINGS,
@@ -213,6 +252,7 @@ const createWorkbook = (config: WorkbookConfig): WorkbookModel => {
     rowCount: Math.min(sheetInput.rowCount ?? 200, settings.maxRows),
     columnCount: Math.min(sheetInput.columnCount ?? 26, settings.maxColumns),
     selection: createDefaultSelection(),
+    charts: cloneValue(sheetInput.charts ?? []),
     metadata: cloneValue(sheetInput.metadata ?? {})
   }));
 
@@ -242,6 +282,7 @@ const normalizeWorkbookSnapshot = (snapshot: WorkbookModel): WorkbookModel => {
     sheet.frozenColumns ??= 0;
     sheet.columns ??= {};
     sheet.rows ??= {};
+    sheet.charts ??= [];
     sheet.metadata ??= {};
   }
 
@@ -782,6 +823,7 @@ export class WorkbookEngine {
       rows: cloneValue(nextSheetInput.rows ?? {}),
       rowCount: Math.min(nextSheetInput.rowCount ?? currentSheet.rowCount, workbook.settings.maxRows),
       columnCount: Math.min(nextSheetInput.columnCount ?? currentSheet.columnCount, workbook.settings.maxColumns),
+      charts: cloneValue(nextSheetInput.charts ?? currentSheet.charts ?? []),
       metadata: cloneValue(nextSheetInput.metadata ?? currentSheet.metadata ?? {})
     };
 
@@ -812,7 +854,9 @@ export class WorkbookEngine {
       throw createSheetNotFoundError(input.anchorSheetId);
     }
 
-    return this.executeSheetOperations(input.anchorSheetId, input.operations, input.affectedRanges ?? [sheet.selection]);
+    const operations = this.executeSheetOperations(input.anchorSheetId, input.operations, input.affectedRanges ?? [sheet.selection]);
+    this.emitChartRangeChangesFromOperations(operations);
+    return operations;
   }
 
   updateCells(input: {
@@ -1065,6 +1109,8 @@ export class WorkbookEngine {
         errorCode: cell.error.code
       });
     }
+
+    this.emitChartRangeChangesFromOperations(result.operations);
 
     return result.operations;
   }
@@ -1449,13 +1495,111 @@ export class WorkbookEngine {
     });
   }
 
-  toJSON(): WorkbookModel {
-    return this.getSnapshot();
+  reportChartImported(sheetId: string, chart: WorksheetChartObject): void {
+    this.events.emit("chart:imported", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId,
+      chartId: chart.id,
+      chart: cloneValue(chart)
+    });
+  }
+
+  reportChartExported(sheetId: string, chartId: string): void {
+    this.events.emit("chart:exported", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId,
+      chartId
+    });
+  }
+
+  reportChartUnsupportedFeature(sheetId: string, chartId: string, feature: string): void {
+    this.events.emit("chart:unsupportedFeature", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId,
+      chartId,
+      feature
+    });
+  }
+
+  reportChartRenderStarted(sheetId: string, chartId: string): void {
+    this.events.emit("chart:renderStarted", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId,
+      chartId
+    });
+  }
+
+  reportChartRenderFinished(sheetId: string, chartId: string, durationMs?: number): void {
+    this.events.emit("chart:renderFinished", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId,
+      chartId,
+      durationMs
+    });
+  }
+
+  reportChartRenderSkipped(sheetId: string, chartId: string, reason: string): void {
+    this.events.emit("chart:renderSkipped", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId,
+      chartId,
+      reason
+    });
+  }
+
+  reportChartError(input: {
+    errorCode: string;
+    message: string;
+    sheetId?: string;
+    chartId?: string;
+  }): void {
+    this.events.emit("chart:error", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId: input.sheetId,
+      chartId: input.chartId,
+      errorCode: input.errorCode,
+      message: input.message
+    });
+  }
+
+  private emitChartExportedEvents(workbook: WorkbookModel): void {
+    for (const sheet of workbook.sheets) {
+      for (const chart of sheet.charts ?? []) {
+        this.reportChartExported(sheet.id, chart.id);
+      }
+    }
+  }
+
+  private emitChartImportedEvents(workbook: WorkbookModel): void {
+    for (const sheet of workbook.sheets) {
+      for (const chart of sheet.charts ?? []) {
+        this.reportChartImported(sheet.id, chart);
+        for (const unsupportedFeature of chart.excelInterop?.unsupportedFeatures ?? []) {
+          this.reportChartUnsupportedFeature(sheet.id, chart.id, unsupportedFeature);
+        }
+      }
+    }
+  }
+
+  toJSON(options?: { emitChartExportEvents?: boolean }): WorkbookModel {
+    const snapshot = this.getSnapshot();
+    if (options?.emitChartExportEvents) {
+      this.emitChartExportedEvents(snapshot);
+    }
+    return snapshot;
   }
 
   loadFromJSON(snapshot: WorkbookModel): void {
     const normalized = normalizeWorkbookSnapshot(snapshot);
     this.commandBus.replaceWorkbook(recalculateWorkbookFormulas(normalized, this.formulaEngine));
+    this.emitChartImportedEvents(normalized);
   }
 
   applyOperations(operations: SpreadsheetOperation[]): void {
@@ -1473,6 +1617,7 @@ export class WorkbookEngine {
       commandType: "ApplyOperations",
       operations
     });
+    this.emitChartRangeChangesFromOperations(operations);
   }
 
   getSelection(sheetId: string): CellRange {
@@ -1481,6 +1626,364 @@ export class WorkbookEngine {
       throw createSheetNotFoundError(sheetId);
     }
     return sheet.selection;
+  }
+
+  getCharts(sheetId: string): WorksheetChartObject[] {
+    const sheet = this.getSheetState(sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+    return cloneValue(sheet.charts ?? []);
+  }
+
+  getChart(sheetId: string, chartId: string): WorksheetChartObject | undefined {
+    return this.getCharts(sheetId).find((chart) => chart.id === chartId);
+  }
+
+  createChart(input: { sheetId: string; chart: WorksheetChartObjectInput }): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(input.sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(input.sheetId);
+    }
+
+    const chartId = input.chart.id?.trim() || createId("chart");
+    const sourceRange = input.chart.sourceRange
+      ? {
+          ...cloneValue(input.chart.sourceRange),
+          chartId,
+          sheetId: input.sheetId
+        }
+      : undefined;
+    const chart: WorksheetChartObject = {
+      id: chartId,
+      sheetId: input.sheetId,
+      type: input.chart.type,
+      title: input.chart.title,
+      sourceRange,
+      figure: cloneValue(input.chart.figure),
+      position: {
+        fromCell: input.chart.position.fromCell,
+        toCell: input.chart.position.toCell,
+        offsetX: Number(input.chart.position.offsetX) || 0,
+        offsetY: Number(input.chart.position.offsetY) || 0,
+        width: Math.max(40, Number(input.chart.position.width) || 320),
+        height: Math.max(40, Number(input.chart.position.height) || 220),
+        zIndex: Math.max(0, Math.round(Number(input.chart.position.zIndex ?? 1) || 1))
+      },
+      style: input.chart.style ? cloneValue(input.chart.style) : undefined,
+      state: {
+        selected: input.chart.state?.selected ?? false,
+        visible: input.chart.state?.visible ?? true,
+        locked: input.chart.state?.locked ?? false,
+        ...(typeof input.chart.state?.lastRenderedAt === "number"
+          ? {
+              lastRenderedAt: input.chart.state.lastRenderedAt
+            }
+          : {})
+      },
+      excelInterop: {
+        ...(input.chart.excelInterop ? cloneValue(input.chart.excelInterop) : {})
+      }
+    };
+
+    const result = this.commandBus.execute(
+      new CreateChartCommand({
+        sheetId: input.sheetId,
+        chart
+      })
+    );
+    this.events.emit("chart:created", {
+      timestamp: Date.now(),
+      workbookId: result.workbook.id,
+      sheetId: input.sheetId,
+      chartId,
+      chart: cloneValue(chart)
+    });
+    if (chart.state.selected) {
+      this.events.emit("chart:selected", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId
+      });
+    }
+    if (sourceRange) {
+      this.events.emit("chart:rangeChanged", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId,
+        range: cloneValue(sourceRange),
+        reason: "binding-updated"
+      });
+    }
+    return result.operations;
+  }
+
+  updateChart(input: {
+    sheetId: string;
+    chartId: string;
+    patch: Partial<Omit<WorksheetChartObject, "id" | "sheetId">>;
+  }): SpreadsheetOperation[] {
+    const previousChart = this.getChart(input.sheetId, input.chartId);
+    const result = this.commandBus.execute(new UpdateChartCommand(input));
+    const nextChart = this.getChart(input.sheetId, input.chartId);
+    if (!nextChart) {
+      throw createCoreOperationError("CORE_CHART_NOT_FOUND", `Chart not found: ${input.chartId}`, {
+        sheetId: input.sheetId,
+        chartId: input.chartId
+      });
+    }
+
+    this.events.emit("chart:updated", {
+      timestamp: Date.now(),
+      workbookId: result.workbook.id,
+      sheetId: input.sheetId,
+      chartId: input.chartId,
+      chart: cloneValue(nextChart)
+    });
+
+    if (previousChart && previousChart.state.selected !== nextChart.state.selected) {
+      this.events.emit(nextChart.state.selected ? "chart:selected" : "chart:unselected", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId: input.chartId
+      });
+    }
+
+    if (input.patch.sourceRange) {
+      this.events.emit("chart:rangeChanged", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId: input.chartId,
+        range: cloneValue(input.patch.sourceRange),
+        reason: "binding-updated"
+      });
+    }
+
+    return result.operations;
+  }
+
+  moveChart(input: {
+    sheetId: string;
+    chartId: string;
+    position: Pick<ChartPosition, "fromCell" | "toCell" | "offsetX" | "offsetY" | "zIndex">;
+  }): SpreadsheetOperation[] {
+    const result = this.commandBus.execute(new MoveChartCommand(input));
+    const nextChart = this.getChart(input.sheetId, input.chartId);
+    if (!nextChart) {
+      throw createCoreOperationError("CORE_CHART_NOT_FOUND", `Chart not found: ${input.chartId}`, {
+        sheetId: input.sheetId,
+        chartId: input.chartId
+      });
+    }
+    this.events.emit("chart:moved", {
+      timestamp: Date.now(),
+      workbookId: result.workbook.id,
+      sheetId: input.sheetId,
+      chartId: input.chartId,
+      position: cloneValue(nextChart.position)
+    });
+    return result.operations;
+  }
+
+  resizeChart(input: {
+    sheetId: string;
+    chartId: string;
+    position: Pick<ChartPosition, "width" | "height" | "toCell">;
+  }): SpreadsheetOperation[] {
+    const result = this.commandBus.execute(new ResizeChartCommand(input));
+    const nextChart = this.getChart(input.sheetId, input.chartId);
+    if (!nextChart) {
+      throw createCoreOperationError("CORE_CHART_NOT_FOUND", `Chart not found: ${input.chartId}`, {
+        sheetId: input.sheetId,
+        chartId: input.chartId
+      });
+    }
+    this.events.emit("chart:resized", {
+      timestamp: Date.now(),
+      workbookId: result.workbook.id,
+      sheetId: input.sheetId,
+      chartId: input.chartId,
+      position: cloneValue(nextChart.position)
+    });
+    return result.operations;
+  }
+
+  deleteChart(input: { sheetId: string; chartId: string }): SpreadsheetOperation[] {
+    const previousChart = this.getChart(input.sheetId, input.chartId);
+    const result = this.commandBus.execute(new DeleteChartCommand(input));
+    if (previousChart?.state.selected) {
+      this.events.emit("chart:unselected", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId: input.chartId
+      });
+    }
+    this.events.emit("chart:deleted", {
+      timestamp: Date.now(),
+      workbookId: result.workbook.id,
+      sheetId: input.sheetId,
+      chartId: input.chartId
+    });
+    return result.operations;
+  }
+
+  changeChartType(input: { sheetId: string; chartId: string; chartType: WorksheetChartType }): SpreadsheetOperation[] {
+    const result = this.commandBus.execute(new ChangeChartTypeCommand(input));
+    const nextChart = this.getChart(input.sheetId, input.chartId);
+    if (nextChart) {
+      this.events.emit("chart:updated", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId: input.chartId,
+        chart: cloneValue(nextChart)
+      });
+    }
+    return result.operations;
+  }
+
+  changeChartRange(input: {
+    sheetId: string;
+    chartId: string;
+    sourceRange: Omit<ChartRangeBinding, "chartId" | "sheetId">;
+  }): SpreadsheetOperation[] {
+    const nextRange: ChartRangeBinding = {
+      ...cloneValue(input.sourceRange),
+      chartId: input.chartId,
+      sheetId: input.sheetId
+    };
+    const result = this.commandBus.execute(
+      new ChangeChartRangeCommand({
+        sheetId: input.sheetId,
+        chartId: input.chartId,
+        sourceRange: nextRange
+      })
+    );
+    const nextChart = this.getChart(input.sheetId, input.chartId);
+    if (nextChart) {
+      this.events.emit("chart:updated", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId: input.chartId,
+        chart: cloneValue(nextChart)
+      });
+      this.events.emit("chart:rangeChanged", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId: input.chartId,
+        range: cloneValue(nextRange),
+        reason: "binding-updated"
+      });
+    }
+    return result.operations;
+  }
+
+  changeChartTitle(input: { sheetId: string; chartId: string; title?: string }): SpreadsheetOperation[] {
+    const result = this.commandBus.execute(new ChangeChartTitleCommand(input));
+    const nextChart = this.getChart(input.sheetId, input.chartId);
+    if (nextChart) {
+      this.events.emit("chart:updated", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId: input.chartId,
+        chart: cloneValue(nextChart)
+      });
+    }
+    return result.operations;
+  }
+
+  changeChartLegend(input: { sheetId: string; chartId: string; visible: boolean }): SpreadsheetOperation[] {
+    const result = this.commandBus.execute(new ChangeChartLegendCommand(input));
+    const nextChart = this.getChart(input.sheetId, input.chartId);
+    if (nextChart) {
+      this.events.emit("chart:updated", {
+        timestamp: Date.now(),
+        workbookId: result.workbook.id,
+        sheetId: input.sheetId,
+        chartId: input.chartId,
+        chart: cloneValue(nextChart)
+      });
+    }
+    return result.operations;
+  }
+
+  private emitChartRangeChangesFromOperations(operations: SpreadsheetOperation[]): void {
+    if (!operations.length) {
+      return;
+    }
+    const rangesBySheet = new Map<string, CellRange[]>();
+    for (const operation of operations) {
+      if (operation.path[0] !== "cells" || typeof operation.path[1] !== "string") {
+        continue;
+      }
+      const address = parseCellKey(operation.path[1]);
+      if (!address) {
+        continue;
+      }
+      const list = rangesBySheet.get(operation.id) ?? [];
+      list.push({
+        start: { ...address },
+        end: { ...address }
+      });
+      rangesBySheet.set(operation.id, list);
+    }
+
+    for (const [sheetId, ranges] of rangesBySheet.entries()) {
+      this.emitLinkedChartRangeChanges(sheetId, ranges);
+    }
+  }
+
+  private emitLinkedChartRangeChanges(sheetId: string, changedRanges: CellRange[]): void {
+    if (!changedRanges.length) {
+      return;
+    }
+    const sheet = this.getSheetState(sheetId);
+    const charts = sheet?.charts;
+    if (!sheet || !charts?.length) {
+      return;
+    }
+
+    const workbookId = this.getSnapshot().id;
+    const emitted = new Set<string>();
+    for (const chart of charts) {
+      if (!chart.sourceRange?.autoRefresh || chart.sourceRange.sheetId !== sheetId) {
+        continue;
+      }
+      const sourceRange = parseChartRangeAddress(chart.sourceRange.rangeAddress);
+      if (!sourceRange) {
+        this.events.emit("chart:dataInvalid", {
+          timestamp: Date.now(),
+          workbookId,
+          sheetId,
+          chartId: chart.id,
+          reason: `Invalid chart range '${chart.sourceRange.rangeAddress}'.`
+        });
+        continue;
+      }
+      if (emitted.has(chart.id)) {
+        continue;
+      }
+      if (!changedRanges.some((changedRange) => rangesOverlap(changedRange, sourceRange))) {
+        continue;
+      }
+      emitted.add(chart.id);
+      this.events.emit("chart:rangeChanged", {
+        timestamp: Date.now(),
+        workbookId,
+        sheetId,
+        chartId: chart.id,
+        range: cloneValue(chart.sourceRange),
+        reason: "source-cells-updated"
+      });
+    }
   }
 
   private getPivotModule(): PivotModule {

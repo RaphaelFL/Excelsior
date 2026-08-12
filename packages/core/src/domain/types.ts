@@ -274,6 +274,103 @@ export interface CellModel {
   metadata?: Record<string, unknown>;
 }
 
+export type WorksheetChartType =
+  | "column"
+  | "bar"
+  | "line"
+  | "area"
+  | "pie"
+  | "donut"
+  | "scatter"
+  | "histogram"
+  | "box"
+  | "heatmap"
+  | "candlestick"
+  | "waterfall"
+  | "funnel"
+  | "polar"
+  | "treemap"
+  | "sunburst"
+  | "sankey"
+  | "surface"
+  | "surface3d"
+  | "scatter3d"
+  | "unknown";
+
+export interface ChartFigureSnapshot {
+  data: unknown[];
+  layout?: Record<string, unknown>;
+  config?: Record<string, unknown>;
+  frames?: unknown[];
+  selection?: unknown;
+  metadata?: Record<string, unknown>;
+  schemaVersion?: string;
+}
+
+export interface ChartRangeBinding {
+  chartId: string;
+  sheetId: string;
+  rangeAddress: string;
+  orientation: "rows" | "columns";
+  firstRowAsHeader: boolean;
+  firstColumnAsLabel: boolean;
+  autoRefresh: boolean;
+}
+
+export interface ChartPosition {
+  fromCell: string;
+  toCell?: string;
+  offsetX: number;
+  offsetY: number;
+  width: number;
+  height: number;
+  zIndex: number;
+}
+
+export interface WorksheetChartObject {
+  id: string;
+  sheetId: string;
+  type: WorksheetChartType;
+  title?: string;
+  sourceRange?: ChartRangeBinding;
+  figure: ChartFigureSnapshot;
+  position: ChartPosition;
+  style?: {
+    theme?: string;
+    background?: string;
+    borderColor?: string;
+    borderWidth?: number;
+    fontFamily?: string;
+    professionalPreset?: "spreadsheet" | "report" | "dashboard";
+  };
+  state: {
+    selected: boolean;
+    visible: boolean;
+    locked: boolean;
+    lastRenderedAt?: number;
+  };
+  excelInterop: {
+    originalChartType?: string;
+    originalChartId?: string;
+    originalAnchor?: unknown;
+    unsupportedFeatures?: string[];
+    fallbackImage?: boolean;
+    preservedRawMetadata?: unknown;
+  };
+}
+
+export interface WorksheetChartObjectInput {
+  id?: string;
+  type: WorksheetChartType;
+  title?: string;
+  sourceRange?: Omit<ChartRangeBinding, "chartId" | "sheetId">;
+  figure: ChartFigureSnapshot;
+  position: Omit<ChartPosition, "zIndex"> & { zIndex?: number };
+  style?: WorksheetChartObject["style"];
+  state?: Partial<WorksheetChartObject["state"]>;
+  excelInterop?: Partial<WorksheetChartObject["excelInterop"]>;
+}
+
 export interface SheetModel {
   id: string;
   name: string;
@@ -287,6 +384,7 @@ export interface SheetModel {
   rowCount: number;
   columnCount: number;
   selection: CellRange;
+  charts?: WorksheetChartObject[];
   metadata?: Record<string, unknown>;
 }
 
@@ -326,6 +424,7 @@ export interface WorkbookDataInput {
   frozenColumns?: number;
   columns?: Record<number, ColumnSchema>;
   rows?: Record<number, RowSchema>;
+  charts?: WorksheetChartObject[];
   metadata?: Record<string, unknown>;
 }
 
@@ -457,6 +556,115 @@ export interface SpreadsheetEventMap {
     workbookId: string;
     sheetId: string;
     range: CellRange;
+  };
+  "chart:created": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    chart: WorksheetChartObject;
+  };
+  "chart:updated": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    chart: WorksheetChartObject;
+  };
+  "chart:deleted": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+  };
+  "chart:moved": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    position: ChartPosition;
+  };
+  "chart:resized": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    position: ChartPosition;
+  };
+  "chart:selected": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+  };
+  "chart:unselected": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+  };
+  "chart:rangeChanged": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    range: ChartRangeBinding;
+    reason: "binding-updated" | "source-cells-updated" | "manual-refresh";
+  };
+  "chart:dataInvalid": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    reason: string;
+  };
+  "chart:imported": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    chart: WorksheetChartObject;
+  };
+  "chart:exported": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+  };
+  "chart:unsupportedFeature": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    feature: string;
+  };
+  "chart:error": {
+    timestamp: number;
+    workbookId: string;
+    sheetId?: string;
+    chartId?: string;
+    errorCode: string;
+    message: string;
+  };
+  "chart:renderStarted": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+  };
+  "chart:renderFinished": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    durationMs?: number;
+  };
+  "chart:renderSkipped": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    chartId: string;
+    reason: string;
   };
   "row-model:changed": {
     timestamp: number;
