@@ -48,9 +48,6 @@ Framework de planilha web em TypeScript puro, inspirado funcionalmente no Fortun
 - `npm run test`
 - `npm run audit:prod`
 - `npm run release:check`
-- `npm run dev`
-- `npm run bench`
-- `npm run build && npm run start -w @excelsior/collab-demo`
 
 ## Atalhos do renderer DOM
 

@@ -4,8 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "workspaces": [
-    "packages/*",
-    "apps/*"
+    "packages/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present --include-workspace-root=false",
@@ -13,9 +12,7 @@
     "test": "vitest run",
     "audit": "npm audit",
     "audit:prod": "npm audit --omit=dev",
-    "release:check": "npm run typecheck && npm run test && npm run build && npm run audit:prod",
-    "dev": "npm run dev -w @excelsior/playground",
-    "bench": "npm run dev -w @excelsior/benchmark"
+    "release:check": "npm run typecheck && npm run test && npm run build && npm run audit:prod"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

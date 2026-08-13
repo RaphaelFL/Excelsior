@@ -29,7 +29,7 @@ related:
 | Barra de fórmulas editável | Sim | Sim | Implementado |
 | Serialização e reidratação JSON | Sim | Sim | Implementado |
 | Import/export XLSX | Plugin | Sim | Implementado em `@excelsior/xlsx` |
-| Colaboração backend | Sim | Sim | Implementado em `@excelsior/collab-demo` |
+| Colaboração backend | Sim | Não | Removido do repositório; a biblioteca continua aceitando `Op[]` remotos para integração externa |
 | Aplicação de `Op[]` remotos | Sim | Sim | Implementado |
 | Fórmulas entre sheets | Sim | Sim | Implementado |
 | Estilos persistidos por célula | Sim | Sim | Implementado no core e renderer |

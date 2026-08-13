@@ -14,8 +14,6 @@ npm install
 npm run typecheck
 npm run test
 npm run build
-npm run dev
-npm run bench
 npm run audit:prod
 npm run release:check
 ```
@@ -137,15 +135,6 @@ Cada sheet pode ter:
 - `metadata`
 - `frozenRows` e `frozenColumns`
 - `conditionalFormats`
-
-## Apps do repositorio
-
-- `npm run dev`
-  - sobe o playground.
-- `npm run bench`
-  - sobe o app de benchmark, incluindo comparacao sequencial vs batch e pivot client vs worker vs server.
-- `npm run build && npm run start -w @excelsior/collab-demo`
-  - gera e sobe a demo colaborativa em memoria com SSE.
 
 ## Proximo passo
 
