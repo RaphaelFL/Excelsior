@@ -212,21 +212,6 @@ O app benchmark cobre dois blocos:
 
 Suba com:
 
-```bash
-npm run bench
-```
-
-Agora o benchmark tambem tem automacao jsdom em CI via `tests/performance/benchmark-ui.spec.ts`.
-
-## Demo colaborativa
-
-Existe uma demo com backend em memoria e SSE para exercitar aplicacao de operacoes remotas e cenarios colaborativos.
-
-```bash
-npm run build
-npm run start -w @excelsior/collab-demo
-```
-
 ## Proximo passo
 
 Leia [05-seguranca-performance-e-operacao.md](./05-seguranca-performance-e-operacao.md) para limites, erros e operacao segura.

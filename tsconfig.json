@@ -8,7 +8,6 @@
     "packages/**/*.cts",
     "packages/**/*.ts",
     "packages/**/*.tsx",
-    "apps/**/*.ts",
     "tests/**/*.ts",
     "vitest.config.ts"
   ],

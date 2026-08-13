@@ -119,9 +119,6 @@ npm run release:check
 
 ## Dicas praticas
 
-- Para UI local, use `npm run dev`.
-- Para exercitar performance e pivot pesado, use `npm run bench`.
-- Para testar colaboracao em memoria, use a demo `collab-demo`.
 - Para contratos publicos, consulte tambem `tests/compatibility/public-api.spec.ts`.
 
 ## Encerramento

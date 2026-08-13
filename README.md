@@ -53,9 +53,6 @@ Documentação técnica completa: [`docs/charts.md`](docs/charts.md)
 - `npm run test`
 - `npm run audit:prod`
 - `npm run release:check`
-- `npm run dev`
-- `npm run bench`
-- `npm run build && npm run start -w @excelsior/collab-demo`
 
 ## Atalhos do Renderer DOM
 
