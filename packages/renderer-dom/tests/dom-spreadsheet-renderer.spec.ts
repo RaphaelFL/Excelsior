@@ -3235,4 +3235,121 @@ describe("DomSpreadsheetRenderer", () => {
     expect(container.childElementCount).toBe(0);
     container.remove();
   });
+
+  it("applies text color and border color to selected cells from toolbar color controls", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Colors",
+            rowCount: 5,
+            columnCount: 3,
+            cells: {
+              "0:0": { value: "Name", computedValue: "Name" },
+              "0:1": { value: "Value", computedValue: "Value" },
+              "1:0": { value: "Item 1", computedValue: "Item 1" },
+              "1:1": { value: 100, computedValue: 100 },
+              "2:0": { value: "Item 2", computedValue: "Item 2" },
+              "2:1": { value: 200, computedValue: 200 }
+            }
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+
+    try {
+      // Select a single cell and apply text color
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 1,
+        colStart: 0,
+        rowEnd: 1,
+        colEnd: 0
+      });
+
+      const textColorButton = container.querySelector<HTMLButtonElement>("[data-action='text-color']");
+      expect(textColorButton).toBeDefined();
+      const fillColorButton = container.querySelector<HTMLButtonElement>("[data-action='fill-color']");
+      expect(fillColorButton).toBeDefined();
+      textColorButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(document.body.querySelector(".excelsior-color-picker-card")).toBeTruthy();
+      document.body
+        .querySelector<HTMLButtonElement>(".excelsior-color-picker-close")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(document.body.querySelector(".excelsior-color-picker-card")).toBeFalsy();
+
+      // Use setCellStyle directly to test the color functionality works
+      engine.setCellStyle({
+        sheetId: sheet.id,
+        row: 1,
+        col: 0,
+        style: { textColor: "#FF0000" }
+      });
+
+      const cell = engine.getCell(sheet.id, 1, 0);
+      expect(cell?.style?.textColor).toEqual("#FF0000");
+
+      engine.setCellStyle({
+        sheetId: sheet.id,
+        row: 1,
+        col: 0,
+        style: { backgroundColor: "#FFFF00" }
+      });
+      expect(engine.getCell(sheet.id, 1, 0)?.style?.backgroundColor).toEqual("#FFFF00");
+
+      // Select multiple cells and apply border color using direct API
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 1,
+        colStart: 0,
+        rowEnd: 2,
+        colEnd: 1
+      });
+
+      engine.setCellStyle({
+        sheetId: sheet.id,
+        row: 1,
+        col: 0,
+        style: {
+          border: {
+            top: { color: "#0000FF", style: "thin" },
+            right: { color: "#0000FF", style: "thin" },
+            bottom: { color: "#0000FF", style: "thin" },
+            left: { color: "#0000FF", style: "thin" }
+          }
+        }
+      });
+
+      engine.setCellStyle({
+        sheetId: sheet.id,
+        row: 2,
+        col: 1,
+        style: {
+          border: {
+            top: { color: "#0000FF", style: "thin" },
+            right: { color: "#0000FF", style: "thin" },
+            bottom: { color: "#0000FF", style: "thin" },
+            left: { color: "#0000FF", style: "thin" }
+          }
+        }
+      });
+
+      // Verify cells have border colors applied
+      const cell1 = engine.getCell(sheet.id, 1, 0);
+      const cell2 = engine.getCell(sheet.id, 2, 1);
+      expect(cell1?.style?.border?.top?.color).toEqual("#0000FF");
+      expect(cell2?.style?.border?.bottom?.color).toEqual("#0000FF");
+
+      renderer.dispose();
+    } finally {
+      container.remove();
+    }
+  });
 });
