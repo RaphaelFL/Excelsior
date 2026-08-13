@@ -2152,4 +2152,89 @@ describe("DomSpreadsheetRenderer", () => {
       container.remove();
     }
   });
+
+  it("opens the color picker card and applies text, fill, and border styles", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [
+          {
+            name: "Colors",
+            rowCount: 5,
+            columnCount: 3,
+            cells: {
+              "0:0": { value: "Name", computedValue: "Name" },
+              "0:1": { value: "Value", computedValue: "Value" },
+              "1:0": { value: "Item 1", computedValue: "Item 1" },
+              "1:1": { value: 100, computedValue: 100 },
+              "2:0": { value: "Item 2", computedValue: "Item 2" },
+              "2:1": { value: 200, computedValue: 200 }
+            }
+          }
+        ]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+
+    try {
+      engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 1,
+        colStart: 0,
+        rowEnd: 1,
+        colEnd: 0
+      });
+
+      const textColorButton = container.querySelector<HTMLButtonElement>("[data-action='text-color']");
+      const borderColorButton = container.querySelector<HTMLButtonElement>("[data-action='border-color']");
+      const fillColorButton = container.querySelector<HTMLButtonElement>("[data-action='fill-color']");
+      expect(textColorButton).toBeTruthy();
+      expect(borderColorButton).toBeTruthy();
+      expect(fillColorButton).toBeTruthy();
+
+      textColorButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(document.body.querySelector(".excelsior-color-picker-card")).toBeTruthy();
+      document.body
+        .querySelector<HTMLButtonElement>(".excelsior-color-picker-close")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      expect(document.body.querySelector(".excelsior-color-picker-card")).toBeFalsy();
+
+      engine.setCellStyle({
+        sheetId: sheet.id,
+        row: 1,
+        col: 0,
+        style: { textColor: "#FF0000", backgroundColor: "#FFFF00" }
+      });
+
+      engine.setCellStyle({
+        sheetId: sheet.id,
+        row: 2,
+        col: 1,
+        style: {
+          border: {
+            top: { color: "#0000FF", style: "thin" },
+            right: { color: "#0000FF", style: "thin" },
+            bottom: { color: "#0000FF", style: "thin" },
+            left: { color: "#0000FF", style: "thin" }
+          }
+        }
+      });
+
+      const primaryCell = engine.getCell(sheet.id, 1, 0);
+      const borderedCell = engine.getCell(sheet.id, 2, 1);
+      expect(primaryCell?.style?.textColor).toEqual("#FF0000");
+      expect(primaryCell?.style?.backgroundColor).toEqual("#FFFF00");
+      expect(borderedCell?.style?.border?.top?.color).toEqual("#0000FF");
+      expect(borderedCell?.style?.border?.bottom?.color).toEqual("#0000FF");
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
 });

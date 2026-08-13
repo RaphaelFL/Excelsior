@@ -159,11 +159,18 @@ export interface RendererMessages {
   clearColumnQuery: string;
   filterColumn: string;
   filterPlaceholder: string;
+  toolbarDataGroup: string;
+  toolbarFontGroup: string;
+  toolbarAlignmentGroup: string;
+  toolbarStructureGroup: string;
   undo: string;
   redo: string;
   bold: string;
   italic: string;
   wrap: string;
+  textColor: string;
+  borderColor: string;
+  fillColor: string;
   alignLeft: string;
   alignCenter: string;
   alignRight: string;
@@ -275,11 +282,18 @@ const DEFAULT_RENDERER_MESSAGES: RendererMessages = {
   clearColumnQuery: "Limpar coluna",
   filterColumn: "Filtro",
   filterPlaceholder: "Filtrar coluna ativa",
+  toolbarDataGroup: "Dados",
+  toolbarFontGroup: "Fonte",
+  toolbarAlignmentGroup: "Alinhamento",
+  toolbarStructureGroup: "Estrutura",
   undo: "Undo",
   redo: "Redo",
   bold: "Bold",
   italic: "Italic",
   wrap: "Wrap",
+  textColor: "Text Color",
+  borderColor: "Border Color",
+  fillColor: "Fill Color",
   alignLeft: "Align Left",
   alignCenter: "Align Center",
   alignRight: "Align Right",
@@ -681,6 +695,33 @@ export class DomSpreadsheetRenderer {
   private readonly customEditorHost = document.createElement("div");
 
   private readonly sheetTabs = document.createElement("div");
+
+  private readonly textColorInput = document.createElement("input");
+
+  private readonly borderColorInput = document.createElement("input");
+
+  private readonly fillColorInput = document.createElement("input");
+
+  private readonly colorPickerCard = document.createElement("section");
+
+  private readonly colorPickerHandle = document.createElement("div");
+
+  private colorPickerDragging?: { offsetX: number; offsetY: number };
+
+  private colorPickerSelectionDragging = false;
+
+  private activeColorPicker?: {
+    input: HTMLInputElement;
+    label: string;
+    hue: number;
+    saturation: number;
+    value: number;
+    left: string;
+    top: string;
+    transform: string;
+  };
+
+  private pendingColorStyle?: Partial<CellStyle>;
 
   private readonly messages: RendererMessages;
 
@@ -2912,9 +2953,15 @@ export class DomSpreadsheetRenderer {
     this.customEditorHost.removeEventListener("keydown", this.handleCustomEditorKeyDown);
     this.customEditorHost.removeEventListener("compositionstart", this.handleCompositionStart);
     this.customEditorHost.removeEventListener("compositionend", this.handleCompositionEnd);
+    this.colorPickerHandle.removeEventListener("mousedown", this.handleColorPickerMouseDown);
+    globalThis.removeEventListener("mousemove", this.handleColorPickerMouseMove);
+    globalThis.removeEventListener("mouseup", this.handleColorPickerMouseUp);
+    globalThis.removeEventListener("mousemove", this.handleColorSurfaceMouseMove);
+    globalThis.removeEventListener("mouseup", this.handleColorSurfaceMouseUp);
     globalThis.removeEventListener("mousemove", this.handleAutofillMouseMove);
     globalThis.removeEventListener("mouseup", this.handleAutofillMouseUp);
     this.destroyCustomEditor();
+    this.colorPickerCard.remove();
     this.container.replaceChildren();
   }
 
@@ -2950,6 +2997,20 @@ export class DomSpreadsheetRenderer {
     this.toolbar.addEventListener("click", this.handleToolbarClick);
     this.toolbar.addEventListener("input", this.handleToolbarInput);
     this.toolbar.addEventListener("keydown", this.handleToolbarKeyDown);
+    this.textColorInput.type = "color";
+    this.textColorInput.value = "#000000";
+    this.textColorInput.setAttribute("aria-hidden", "true");
+    this.textColorInput.addEventListener("change", this.handleTextColorChange);
+    this.borderColorInput.type = "color";
+    this.borderColorInput.value = "#000000";
+    this.borderColorInput.setAttribute("aria-hidden", "true");
+    this.borderColorInput.addEventListener("change", this.handleBorderColorChange);
+    this.fillColorInput.type = "color";
+    this.fillColorInput.value = "#ffffff";
+    this.fillColorInput.setAttribute("aria-hidden", "true");
+    this.fillColorInput.addEventListener("change", this.handleFillColorChange);
+    this.colorPickerHandle.className = "excelsior-color-picker-handle";
+    this.colorPickerHandle.addEventListener("mousedown", this.handleColorPickerMouseDown);
     this.chrome.addEventListener("click", this.handleColumnHeaderClick);
     this.chrome.addEventListener("keydown", this.handleColumnHeaderKeyDown);
     this.sheetTabs.addEventListener("click", this.handleSheetTabClick);
@@ -3104,6 +3165,391 @@ export class DomSpreadsheetRenderer {
     if (event.target) {
       this.composingTargets.delete(event.target);
     }
+  };
+
+  private readonly handleTextColorChange = (event: Event): void => {
+    const input = event.target as HTMLInputElement;
+    const color = input.value;
+    if (color) {
+      this.queueColorChange({ textColor: color });
+    }
+  };
+
+  private readonly handleBorderColorChange = (event: Event): void => {
+    const input = event.target as HTMLInputElement;
+    const color = input.value;
+    if (color) {
+      this.queueColorChange({
+        border: {
+          top: { color, style: "thin" },
+          right: { color, style: "thin" },
+          bottom: { color, style: "thin" },
+          left: { color, style: "thin" }
+        }
+      });
+    }
+  };
+
+  private readonly handleFillColorChange = (event: Event): void => {
+    const input = event.target as HTMLInputElement;
+    const color = input.value;
+    if (color) {
+      this.queueColorChange({ backgroundColor: color });
+    }
+  };
+
+  private readonly queueColorChange = (style: Partial<CellStyle>): void => {
+    this.pendingColorStyle = style;
+  };
+
+  private readonly buildPendingColorStyle = (input: HTMLInputElement, color: string): Partial<CellStyle> => {
+    if (input === this.textColorInput) {
+      return { textColor: color };
+    }
+
+    if (input === this.fillColorInput) {
+      return { backgroundColor: color };
+    }
+
+    return {
+      border: {
+        top: { color, style: "thin" },
+        right: { color, style: "thin" },
+        bottom: { color, style: "thin" },
+        left: { color, style: "thin" }
+      }
+    };
+  };
+
+  private readonly clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+  private readonly hexToRgb = (hex: string): { r: number; g: number; b: number } => {
+    const normalized = hex.replace("#", "").trim();
+    const value = normalized.length === 3
+      ? normalized
+          .split("")
+          .map((part) => `${part}${part}`)
+          .join("")
+      : normalized.padEnd(6, "0").slice(0, 6);
+
+    return {
+      r: Number.parseInt(value.slice(0, 2), 16),
+      g: Number.parseInt(value.slice(2, 4), 16),
+      b: Number.parseInt(value.slice(4, 6), 16)
+    };
+  };
+
+  private readonly rgbToHex = (r: number, g: number, b: number): string => {
+    const toHex = (value: number) => this.clamp(Math.round(value), 0, 255).toString(16).padStart(2, "0");
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+  };
+
+  private readonly rgbToHsv = (
+    r: number,
+    g: number,
+    b: number
+  ): { hue: number; saturation: number; value: number } => {
+    const red = r / 255;
+    const green = g / 255;
+    const blue = b / 255;
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+    const delta = max - min;
+    let hue = 0;
+
+    if (delta !== 0) {
+      if (max === red) {
+        hue = 60 * (((green - blue) / delta) % 6);
+      } else if (max === green) {
+        hue = 60 * (((blue - red) / delta) + 2);
+      } else {
+        hue = 60 * (((red - green) / delta) + 4);
+      }
+    }
+
+    if (hue < 0) {
+      hue += 360;
+    }
+
+    return {
+      hue,
+      saturation: max === 0 ? 0 : delta / max,
+      value: max
+    };
+  };
+
+  private readonly hsvToRgb = (
+    hue: number,
+    saturation: number,
+    value: number
+  ): { r: number; g: number; b: number } => {
+    const chroma = value * saturation;
+    const segment = hue / 60;
+    const intermediate = chroma * (1 - Math.abs((segment % 2) - 1));
+    const match = value - chroma;
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+
+    if (segment >= 0 && segment < 1) {
+      red = chroma;
+      green = intermediate;
+    } else if (segment < 2) {
+      red = intermediate;
+      green = chroma;
+    } else if (segment < 3) {
+      green = chroma;
+      blue = intermediate;
+    } else if (segment < 4) {
+      green = intermediate;
+      blue = chroma;
+    } else if (segment < 5) {
+      red = intermediate;
+      blue = chroma;
+    } else {
+      red = chroma;
+      blue = intermediate;
+    }
+
+    return {
+      r: Math.round((red + match) * 255),
+      g: Math.round((green + match) * 255),
+      b: Math.round((blue + match) * 255)
+    };
+  };
+
+  private readonly getActiveColorHex = (): string => {
+    const state = this.activeColorPicker;
+    if (!state) {
+      return "#000000";
+    }
+
+    const { r, g, b } = this.hsvToRgb(state.hue, state.saturation, state.value);
+    return this.rgbToHex(r, g, b);
+  };
+
+  private readonly syncActiveColorPicker = (): void => {
+    const state = this.activeColorPicker;
+    if (!state) {
+      return;
+    }
+
+    const hex = this.getActiveColorHex();
+    state.input.value = hex;
+    this.queueColorChange(this.buildPendingColorStyle(state.input, hex));
+  };
+
+  private readonly closeColorPicker = (): void => {
+    this.activeColorPicker = undefined;
+    this.pendingColorStyle = undefined;
+    this.colorPickerCard.remove();
+    this.handleColorPickerMouseUp();
+    this.handleColorSurfaceMouseUp();
+  };
+
+  private readonly renderColorPickerCard = (): void => {
+    const state = this.activeColorPicker;
+    if (!state) {
+      this.colorPickerCard.remove();
+      return;
+    }
+
+    this.syncActiveColorPicker();
+    const { r, g, b } = this.hsvToRgb(state.hue, state.saturation, state.value);
+    const currentHex = this.rgbToHex(r, g, b);
+
+    this.colorPickerCard.replaceChildren();
+    this.colorPickerCard.className = "excelsior-color-picker-card";
+    this.colorPickerCard.style.left = state.left;
+    this.colorPickerCard.style.top = state.top;
+    this.colorPickerCard.style.transform = state.transform;
+
+    const header = document.createElement("div");
+    header.className = "excelsior-color-picker-header";
+    this.colorPickerHandle.className = "excelsior-color-picker-handle";
+    this.colorPickerHandle.textContent = state.label;
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "excelsior-color-picker-close";
+    closeButton.textContent = "×";
+    closeButton.setAttribute("aria-label", "Fechar seletor de cor");
+    closeButton.title = "Fechar";
+    closeButton.addEventListener("click", () => {
+      this.closeColorPicker();
+      this.render();
+      this.focus();
+    });
+    header.append(this.colorPickerHandle, closeButton);
+
+    const surface = document.createElement("div");
+    surface.className = "excelsior-color-picker-surface";
+    surface.style.background = `linear-gradient(to top, #000000, transparent), linear-gradient(to right, #ffffff, hsl(${state.hue} 100% 50%))`;
+    surface.addEventListener("mousedown", this.handleColorSurfaceMouseDown);
+
+    const cursor = document.createElement("div");
+    cursor.className = "excelsior-color-picker-cursor";
+    cursor.style.left = `${state.saturation * 100}%`;
+    cursor.style.top = `${(1 - state.value) * 100}%`;
+    surface.append(cursor);
+
+    const hueInput = document.createElement("input");
+    hueInput.type = "range";
+    hueInput.className = "excelsior-color-picker-hue";
+    hueInput.min = "0";
+    hueInput.max = "360";
+    hueInput.value = String(Math.round(state.hue));
+    hueInput.addEventListener("input", () => {
+      if (!this.activeColorPicker) {
+        return;
+      }
+      this.activeColorPicker.hue = Number(hueInput.value);
+      this.renderColorPickerCard();
+    });
+
+    const details = document.createElement("div");
+    details.className = "excelsior-color-picker-details";
+
+    const preview = document.createElement("div");
+    preview.className = "excelsior-color-picker-preview";
+    preview.style.background = currentHex;
+    details.append(preview);
+
+    const channels = document.createElement("div");
+    channels.className = "excelsior-color-picker-channels";
+    const createChannel = (label: "R" | "G" | "B", value: number) => {
+      const field = document.createElement("label");
+      field.className = "excelsior-color-picker-channel";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.max = "255";
+      input.value = String(value);
+      input.addEventListener("change", () => {
+        const wrapper = input.closest(".excelsior-color-picker-channels");
+        if (!wrapper || !this.activeColorPicker) {
+          return;
+        }
+        const values = Array.from(wrapper.querySelectorAll<HTMLInputElement>("input")).map((element) =>
+          this.clamp(Number(element.value || "0"), 0, 255)
+        );
+        const [nextR, nextG, nextB] = values;
+        const hsv = this.rgbToHsv(nextR, nextG, nextB);
+        this.activeColorPicker.hue = hsv.hue;
+        this.activeColorPicker.saturation = hsv.saturation;
+        this.activeColorPicker.value = hsv.value;
+        this.renderColorPickerCard();
+      });
+      const caption = document.createElement("span");
+      caption.textContent = label;
+      field.append(input, caption);
+      return field;
+    };
+
+    channels.append(createChannel("R", r), createChannel("G", g), createChannel("B", b));
+    details.append(channels);
+
+    const confirmButton = document.createElement("button");
+    confirmButton.type = "button";
+    confirmButton.className = "excelsior-color-confirmation-button";
+    confirmButton.textContent = "Confirmar cor";
+    confirmButton.setAttribute("aria-label", "Confirmar cor");
+    confirmButton.addEventListener("click", () => {
+      if (!this.pendingColorStyle) {
+        return;
+      }
+      this.applyStyleToSelection(this.pendingColorStyle);
+      this.closeColorPicker();
+      this.render();
+      this.focus();
+    });
+
+    this.colorPickerCard.append(header, surface, hueInput, details, confirmButton);
+    if (!this.colorPickerCard.isConnected) {
+      document.body.append(this.colorPickerCard);
+    }
+  };
+
+  private readonly updateColorPickerFromSurface = (event: MouseEvent): void => {
+    const state = this.activeColorPicker;
+    const surface = this.colorPickerCard.querySelector<HTMLElement>(".excelsior-color-picker-surface");
+    if (!state || !surface) {
+      return;
+    }
+
+    const bounds = surface.getBoundingClientRect();
+    state.saturation = this.clamp((event.clientX - bounds.left) / bounds.width, 0, 1);
+    state.value = 1 - this.clamp((event.clientY - bounds.top) / bounds.height, 0, 1);
+    this.renderColorPickerCard();
+  };
+
+  private readonly handleColorSurfaceMouseDown = (event: MouseEvent): void => {
+    this.colorPickerSelectionDragging = true;
+    this.updateColorPickerFromSurface(event);
+    event.preventDefault();
+    globalThis.addEventListener("mousemove", this.handleColorSurfaceMouseMove);
+    globalThis.addEventListener("mouseup", this.handleColorSurfaceMouseUp);
+  };
+
+  private readonly handleColorSurfaceMouseMove = (event: MouseEvent): void => {
+    if (!this.colorPickerSelectionDragging) {
+      return;
+    }
+
+    this.updateColorPickerFromSurface(event);
+  };
+
+  private readonly handleColorSurfaceMouseUp = (): void => {
+    this.colorPickerSelectionDragging = false;
+    globalThis.removeEventListener("mousemove", this.handleColorSurfaceMouseMove);
+    globalThis.removeEventListener("mouseup", this.handleColorSurfaceMouseUp);
+  };
+
+  private readonly handleColorPickerMouseDown = (event: MouseEvent): void => {
+    const bounds = this.colorPickerCard.getBoundingClientRect();
+    this.colorPickerDragging = {
+      offsetX: event.clientX - bounds.left,
+      offsetY: event.clientY - bounds.top
+    };
+    event.preventDefault();
+    globalThis.addEventListener("mousemove", this.handleColorPickerMouseMove);
+    globalThis.addEventListener("mouseup", this.handleColorPickerMouseUp);
+  };
+
+  private readonly handleColorPickerMouseMove = (event: MouseEvent): void => {
+    if (!this.colorPickerDragging || !this.activeColorPicker) {
+      return;
+    }
+
+    this.activeColorPicker.left = `${Math.max(0, event.clientX - this.colorPickerDragging.offsetX)}px`;
+    this.activeColorPicker.top = `${Math.max(0, event.clientY - this.colorPickerDragging.offsetY)}px`;
+    this.activeColorPicker.transform = "none";
+    this.colorPickerCard.style.left = this.activeColorPicker.left;
+    this.colorPickerCard.style.top = this.activeColorPicker.top;
+    this.colorPickerCard.style.transform = this.activeColorPicker.transform;
+  };
+
+  private readonly handleColorPickerMouseUp = (): void => {
+    this.colorPickerDragging = undefined;
+    globalThis.removeEventListener("mousemove", this.handleColorPickerMouseMove);
+    globalThis.removeEventListener("mouseup", this.handleColorPickerMouseUp);
+  };
+
+  private readonly openColorPicker = (input: HTMLInputElement, label: string): void => {
+    const currentColor = input.value || (input === this.fillColorInput ? "#FFFFFF" : "#000000");
+    const { r, g, b } = this.hexToRgb(currentColor);
+    const hsv = this.rgbToHsv(r, g, b);
+    const previousState = this.activeColorPicker;
+    this.activeColorPicker = {
+      input,
+      label,
+      hue: hsv.hue,
+      saturation: hsv.saturation,
+      value: hsv.value,
+      left: previousState?.left ?? "50%",
+      top: previousState?.top ?? "50%",
+      transform: previousState?.transform ?? "translate(-50%, -50%)"
+    };
+    this.renderColorPickerCard();
   };
 
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
@@ -3555,6 +4001,15 @@ export class DomSpreadsheetRenderer {
           fontStyle: activeCell?.style?.fontStyle === "italic" ? "normal" : "italic"
         });
         break;
+      case "text-color":
+        this.openColorPicker(this.textColorInput, this.messages.textColor);
+        return;
+      case "border-color":
+        this.openColorPicker(this.borderColorInput, this.messages.borderColor);
+        return;
+      case "fill-color":
+        this.openColorPicker(this.fillColorInput, this.messages.fillColor);
+        return;
       case "wrap":
         this.applyStyleToSelection({
           wrap: !activeCell?.style?.wrap
@@ -3990,6 +4445,43 @@ export class DomSpreadsheetRenderer {
     this.chrome.append(fragment);
   }
 
+  private getToolbarActionIcon(action: string): string {
+    const iconByAction: Record<string, string> = {
+      undo: "↶",
+      redo: "↷",
+      "sort-asc": "A↑",
+      "sort-desc": "Z↓",
+      "group-column": "⊞",
+      "pivot-column": "⥁",
+      "aggregate-sum": "Σ",
+      "aggregate-avg": "AVG",
+      "aggregate-min": "MIN",
+      "aggregate-max": "MAX",
+      "aggregate-count": "#",
+      "clear-column-query": "⌫",
+      bold: "B",
+      italic: "I",
+      "text-color": "A",
+      "border-color": "⊞",
+      "fill-color": "▣",
+      wrap: "↵",
+      "align-left": "≡←",
+      "align-center": "≡",
+      "align-right": "→≡",
+      merge: "⇆",
+      unmerge: "⇅",
+      "insert-row": "+R",
+      "delete-row": "-R",
+      "insert-column": "+C",
+      "delete-column": "-C",
+      "create-pivot": "◫",
+      "find-replace": "⌕",
+      "add-sheet": "+"
+    };
+
+    return iconByAction[action] ?? "•";
+  }
+
   private renderToolbar(): HTMLElement {
     this.toolbar.replaceChildren();
     const sheet = this.engine.getActiveSheet();
@@ -4012,39 +4504,81 @@ export class DomSpreadsheetRenderer {
       "sort-asc": activeRemoteSort === "asc",
       "sort-desc": activeRemoteSort === "desc"
     };
-    const actions: Array<{ action: string; label: string }> = [
-      { action: "undo", label: this.messages.undo },
-      { action: "redo", label: this.messages.redo },
-      { action: "sort-asc", label: this.messages.sortAscending },
-      { action: "sort-desc", label: this.messages.sortDescending },
-      { action: "group-column", label: this.messages.groupColumn },
-      { action: "pivot-column", label: this.messages.pivotColumn },
-      { action: "aggregate-sum", label: this.messages.aggregateSum },
-      { action: "aggregate-avg", label: this.messages.aggregateAverage },
-      { action: "aggregate-min", label: this.messages.aggregateMin },
-      { action: "aggregate-max", label: this.messages.aggregateMax },
-      { action: "aggregate-count", label: this.messages.aggregateCount },
-      { action: "clear-column-query", label: this.messages.clearColumnQuery },
-      { action: "bold", label: this.messages.bold },
-      { action: "italic", label: this.messages.italic },
-      { action: "wrap", label: this.messages.wrap },
-      { action: "align-left", label: this.messages.alignLeft },
-      { action: "align-center", label: this.messages.alignCenter },
-      { action: "align-right", label: this.messages.alignRight },
-      { action: "merge", label: this.messages.merge },
-      { action: "unmerge", label: this.messages.unmerge },
-      { action: "insert-row", label: this.messages.insertRow },
-      { action: "delete-row", label: this.messages.deleteRow },
-      { action: "insert-column", label: this.messages.insertColumn },
-      { action: "delete-column", label: this.messages.deleteColumn },
-      { action: "create-pivot", label: this.messages.createPivot },
-      { action: "find-replace", label: this.messages.findReplace },
-      { action: "add-sheet", label: this.messages.addSheet }
+    type ToolbarGroupKey = "data" | "font" | "alignment" | "structure";
+    const actions: Array<{ action: string; label: string; group: ToolbarGroupKey }> = [
+      { action: "undo", label: this.messages.undo, group: "data" },
+      { action: "redo", label: this.messages.redo, group: "data" },
+      { action: "sort-asc", label: this.messages.sortAscending, group: "data" },
+      { action: "sort-desc", label: this.messages.sortDescending, group: "data" },
+      { action: "group-column", label: this.messages.groupColumn, group: "data" },
+      { action: "pivot-column", label: this.messages.pivotColumn, group: "data" },
+      { action: "aggregate-sum", label: this.messages.aggregateSum, group: "data" },
+      { action: "aggregate-avg", label: this.messages.aggregateAverage, group: "data" },
+      { action: "aggregate-min", label: this.messages.aggregateMin, group: "data" },
+      { action: "aggregate-max", label: this.messages.aggregateMax, group: "data" },
+      { action: "aggregate-count", label: this.messages.aggregateCount, group: "data" },
+      { action: "clear-column-query", label: this.messages.clearColumnQuery, group: "data" },
+      { action: "create-pivot", label: this.messages.createPivot, group: "data" },
+      { action: "find-replace", label: this.messages.findReplace, group: "data" },
+      { action: "add-sheet", label: this.messages.addSheet, group: "data" },
+      { action: "bold", label: this.messages.bold, group: "font" },
+      { action: "italic", label: this.messages.italic, group: "font" },
+      { action: "text-color", label: this.messages.textColor, group: "font" },
+      { action: "border-color", label: this.messages.borderColor, group: "font" },
+      { action: "fill-color", label: this.messages.fillColor, group: "font" },
+      { action: "wrap", label: this.messages.wrap, group: "alignment" },
+      { action: "align-left", label: this.messages.alignLeft, group: "alignment" },
+      { action: "align-center", label: this.messages.alignCenter, group: "alignment" },
+      { action: "align-right", label: this.messages.alignRight, group: "alignment" },
+      { action: "merge", label: this.messages.merge, group: "alignment" },
+      { action: "unmerge", label: this.messages.unmerge, group: "alignment" },
+      { action: "insert-row", label: this.messages.insertRow, group: "structure" },
+      { action: "delete-row", label: this.messages.deleteRow, group: "structure" },
+      { action: "insert-column", label: this.messages.insertColumn, group: "structure" },
+      { action: "delete-column", label: this.messages.deleteColumn, group: "structure" }
     ];
+    const remoteOnlyActions = new Set([
+      "sort-asc",
+      "sort-desc",
+      "group-column",
+      "pivot-column",
+      "aggregate-sum",
+      "aggregate-avg",
+      "aggregate-min",
+      "aggregate-max",
+      "aggregate-count",
+      "clear-column-query"
+    ]);
+    const groupOrder: Array<{ key: ToolbarGroupKey; label: string }> = [
+      { key: "data", label: this.messages.toolbarDataGroup },
+      { key: "font", label: this.messages.toolbarFontGroup },
+      { key: "alignment", label: this.messages.toolbarAlignmentGroup },
+      { key: "structure", label: this.messages.toolbarStructureGroup }
+    ];
+    const ribbon = document.createElement("div");
+    ribbon.className = "excelsior-toolbar-ribbon";
+    const groupControls = new Map<ToolbarGroupKey, HTMLElement>();
+
+    for (const groupItem of groupOrder) {
+      const group = document.createElement("section");
+      group.className = "excelsior-toolbar-group";
+      group.dataset.toolbarGroup = groupItem.key;
+
+      const controls = document.createElement("div");
+      controls.className = "excelsior-toolbar-group-controls";
+
+      const label = document.createElement("span");
+      label.className = "excelsior-toolbar-group-label";
+      label.textContent = groupItem.label;
+
+      group.append(controls, label);
+      groupControls.set(groupItem.key, controls);
+      ribbon.append(group);
+    }
 
     if (remoteRequestModel !== undefined) {
       const filterField = document.createElement("label");
-      filterField.className = "excelsior-toolbar-filter";
+      filterField.className = "excelsior-toolbar-filter is-inline";
       const filterLabel = document.createElement("span");
       filterLabel.textContent = `${this.messages.filterColumn} ${this.getRemoteRequestField(activeAddress.col)}`;
       const filterInput = document.createElement("input");
@@ -4055,7 +4589,7 @@ export class DomSpreadsheetRenderer {
       filterInput.value = this.getActiveRemoteFilterValue(sheet.id, activeAddress.col);
       filterInput.setAttribute("aria-label", `${this.messages.filterColumn} ${this.getRemoteRequestField(activeAddress.col)}`);
       filterField.append(filterLabel, filterInput);
-      this.toolbar.append(filterField);
+      groupControls.get("data")?.append(filterField);
     }
 
     for (const item of actions) {
@@ -4064,20 +4598,10 @@ export class DomSpreadsheetRenderer {
       button.className = "excelsior-toolbar-button";
       button.dataset.action = item.action;
       button.textContent = item.label;
-      if (
-        [
-          "sort-asc",
-          "sort-desc",
-          "group-column",
-          "pivot-column",
-          "aggregate-sum",
-          "aggregate-avg",
-          "aggregate-min",
-          "aggregate-max",
-          "aggregate-count",
-          "clear-column-query"
-        ].includes(item.action) && remoteRequestModel === undefined
-      ) {
+      button.setAttribute("aria-label", item.label);
+      button.dataset.icon = this.getToolbarActionIcon(item.action);
+      button.title = item.label;
+      if (remoteOnlyActions.has(item.action) && remoteRequestModel === undefined) {
         button.disabled = true;
       }
       if (item.action === "create-pivot" && pivotSourceRange === undefined) {
@@ -4086,9 +4610,10 @@ export class DomSpreadsheetRenderer {
       if (item.action in toggleStates) {
         button.setAttribute("aria-pressed", String(Boolean(toggleStates[item.action])));
       }
-      this.toolbar.append(button);
+      groupControls.get(item.group)?.append(button);
     }
 
+    this.toolbar.append(ribbon);
     return this.toolbar;
   }
 
