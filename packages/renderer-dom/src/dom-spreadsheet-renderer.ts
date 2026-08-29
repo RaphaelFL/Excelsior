@@ -1,23 +1,31 @@
 import {
   CellValidationError,
   SpreadsheetOperationError,
+  WorkbookEngine,
   cellAddressToLabel,
+  cellLabelToAddress,
   columnIndexToLabel,
   type CellAddress,
   type CellModel,
-  type PivotAggregateFunction,
-  type PivotBuildProgress,
   type CellPrimitive,
   type CellRange,
+  type CellStyle,
   type CellValidationConfig,
   type CellValidationRule,
-  type CellStyle,
+  type ClientSideFilterDescriptor,
+  type CollaborationPresence,
+  type CommentAuthor,
+  type PivotAggregateFunction,
+  type PivotBuildProgress,
   type PivotExecutionMode,
   type RowModelRow,
-  type SheetMerge,
   type RowResult,
+  type SheetMerge,
+  type SheetModel,
   type SpreadsheetOperation,
-  type WorkbookEngine
+  type WorksheetImageObject,
+  type WorksheetObjectPosition,
+  type WorksheetWidgetObject
 } from "@excelsior/core";
 import { parseTabularText, resolveClipboardText } from "./clipboard";
 import {
@@ -167,10 +175,14 @@ export interface RendererMessages {
   redo: string;
   bold: string;
   italic: string;
+  underline: string;
+  fontFamily: string;
+  fontSize: string;
   wrap: string;
   textColor: string;
   borderColor: string;
   fillColor: string;
+  formatPainter: string;
   alignLeft: string;
   alignCenter: string;
   alignRight: string;
@@ -182,6 +194,12 @@ export interface RendererMessages {
   deleteColumn: string;
   findReplace: string;
   addSheet: string;
+  cellNote: string;
+  cellNoteLabel: string;
+  cellNoteSave: string;
+  cellNoteRemove: string;
+  cellNoteClose: string;
+  cellNoteIndicator: string;
   checkboxHint: string;
   dropdownHint: string;
   invalidCellValue: string;
@@ -211,11 +229,37 @@ export interface DomSpreadsheetRendererOptions {
   onChange?: (operations: SpreadsheetOperation[]) => void;
   cellRenderers?: CustomCellRenderer[];
   cellEditors?: CustomCellEditor[];
+  widgetRenderers?: Readonly<Record<string, CustomWidgetRenderer>>;
   includeHiddenCellsInClipboard?: boolean;
   autofill?: AutofillOptions;
   localization?: RendererLocalizationOptions;
   renderDebounceMs?: number;
+  collaboration?: {
+    user: CommentAuthor;
+    color?: string;
+  };
+  comments?: {
+    author: CommentAuthor;
+  };
 }
+
+export interface CustomWidgetRenderContext {
+  host: HTMLElement;
+  widget: Readonly<WorksheetWidgetObject>;
+}
+
+export type CustomWidgetRenderer = (context: CustomWidgetRenderContext) => void | (() => void);
+
+const DEFAULT_PRESENCE_COLOR = "#2563eb";
+const SAFE_PRESENCE_COLOR = /^#[0-9a-f]{6}$/i;
+
+const getPresenceColor = (presence: CollaborationPresence): string => {
+  const color = presence.metadata?.color;
+  return typeof color === "string" && SAFE_PRESENCE_COLOR.test(color) ? color : DEFAULT_PRESENCE_COLOR;
+};
+
+const getPresenceName = (presence: CollaborationPresence): string =>
+  presence.user?.name?.trim().slice(0, 80) || "Participante remoto";
 
 const DEFAULT_RENDERER_MESSAGES: RendererMessages = {
   gridLabel: "Planilha",
@@ -290,10 +334,14 @@ const DEFAULT_RENDERER_MESSAGES: RendererMessages = {
   redo: "Redo",
   bold: "Bold",
   italic: "Italic",
+  underline: "Underline",
+  fontFamily: "Fonte",
+  fontSize: "Tamanho da fonte",
   wrap: "Wrap",
   textColor: "Text Color",
   borderColor: "Border Color",
   fillColor: "Fill Color",
+  formatPainter: "Copiar formatação",
   alignLeft: "Align Left",
   alignCenter: "Align Center",
   alignRight: "Align Right",
@@ -305,10 +353,16 @@ const DEFAULT_RENDERER_MESSAGES: RendererMessages = {
   deleteColumn: "- Col",
   findReplace: "Find",
   addSheet: "+ Sheet",
+  cellNote: "Nota",
+  cellNoteLabel: "Nota da célula",
+  cellNoteSave: "Salvar",
+  cellNoteRemove: "Remover",
+  cellNoteClose: "Fechar",
+  cellNoteIndicator: "Abrir nota da célula",
   checkboxHint: "Clique duplo para alternar o checkbox.",
   dropdownHint: "Clique duplo para escolher um valor da lista.",
   invalidCellValue: "Valor inválido para a célula selecionada.",
-  autofillHandle: "Arrastar para preencher"
+  autofillHandle: "Arrastar para preencher",
 };
 
 const DEFAULT_RENDERER_SHORTCUTS: RendererShortcutMap = {
@@ -316,6 +370,8 @@ const DEFAULT_RENDERER_SHORTCUTS: RendererShortcutMap = {
   findNext: ["F3"],
   findPrevious: ["Shift+F3"]
 };
+
+const ROW_HEADER_WIDTH = 56;
 
 const isWithinRange = (row: number, col: number, range: CellRange): boolean =>
   row >= range.start.row &&
@@ -330,6 +386,19 @@ const rangesOverlap = (left: CellRange, right: CellRange): boolean =>
   left.end.col >= right.start.col;
 
 const getCellKey = (row: number, col: number): string => `${row}:${col}`;
+
+const getSafeRichTextHref = (hyperlink: string | undefined): string | undefined => {
+  if (!hyperlink || /[\s\u007f]/.test(hyperlink)) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(hyperlink);
+    return url.protocol === "https:" || (url.protocol === "mailto:" && url.pathname.includes("@")) ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 const buildOffsets = (count: number, getSize: (index: number) => number): number[] => {
   const offsets = [0];
@@ -385,13 +454,16 @@ const normalizeStyle = (style?: CellStyle): CellStyle | undefined => {
 
 type CellValidationListRule = Extract<CellValidationRule, { type: "list" | "dropdown" }>;
 type CellValidationCheckboxRule = Extract<CellValidationRule, { type: "checkbox" }>;
+type CellValidationDateRule = Extract<CellValidationRule, { type: "date" }>;
 
-type InteractiveValidationRule = CellValidationListRule | CellValidationCheckboxRule;
+type InteractiveValidationRule = CellValidationListRule | CellValidationCheckboxRule | CellValidationDateRule;
 
 const isListValidationRule = (rule: CellValidationRule): rule is CellValidationListRule =>
   rule.type === "list" || rule.type === "dropdown";
 
 const isCheckboxValidationRule = (rule: CellValidationRule): rule is CellValidationCheckboxRule => rule.type === "checkbox";
+
+const isDateValidationRule = (rule: CellValidationRule): rule is CellValidationDateRule => rule.type === "date";
 
 const toBoolean = (value: CellPrimitive): boolean => {
   if (typeof value === "boolean") {
@@ -581,6 +653,49 @@ interface RemoteFilterDraft {
   value: string;
 }
 
+interface VisualObjectSurfaceMetrics {
+  sheetId: string;
+  rowOffsets: number[];
+  colOffsets: number[];
+  rowCount: number;
+  colCount: number;
+}
+
+interface VisualObjectRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+interface VisualObjectInteractionState {
+  mode: "move" | "resize";
+  kind: "image" | "widget";
+  sheetId: string;
+  objectId: string;
+  pointerStartX: number;
+  pointerStartY: number;
+  originRect: VisualObjectRect;
+  liveRect: VisualObjectRect;
+}
+
+const VISUAL_OBJECT_MIN_WIDTH = 220;
+const VISUAL_OBJECT_MIN_HEIGHT = 150;
+
+const clampNumeric = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+const toFiniteNumber = (value: unknown, fallback = 0): number =>
+  typeof value === "number" && Number.isFinite(value) ? value : fallback;
+const cloneSerializable = <T>(value: T): T => {
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(value);
+    } catch {
+      // Fallback to JSON clone for plain serializable payloads.
+    }
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+};
+
 type ScheduledFrameHandle = ReturnType<typeof globalThis.setTimeout>;
 
 const scheduleFrame = (callback: () => void): ScheduledFrameHandle => {
@@ -636,9 +751,13 @@ const createPivotAggregateLabel = (messages: RendererMessages, aggregate: PivotA
 export class DomSpreadsheetRenderer {
   private readonly root = document.createElement("div");
 
+  private readonly gridPanel = document.createElement("div");
+
   private readonly chrome = document.createElement("div");
 
   private readonly toolbar = document.createElement("div");
+
+  private readonly imageFileInput = document.createElement("input");
 
   private readonly formulaBar = document.createElement("div");
 
@@ -656,11 +775,43 @@ export class DomSpreadsheetRenderer {
 
   private readonly findReplaceResults = document.createElement("span");
 
+  private readonly notePanel = document.createElement("section");
+
+  private readonly noteInput = document.createElement("textarea");
+
+  private readonly commentList = document.createElement("div");
+
+  private readonly commentInput = document.createElement("textarea");
+
+  private readonly noteSaveButton = createFindReplaceActionButton("save", "");
+
+  private readonly noteRemoveButton = createFindReplaceActionButton("remove", "");
+
+  private readonly noteCloseButton = createFindReplaceActionButton("close", "");
+
   private readonly pivotPanel = document.createElement("div");
 
   private readonly pivotApplyButton = createFindReplaceActionButton("apply", "");
 
   private readonly pivotCloseButton = createFindReplaceActionButton("close", "");
+
+  private readonly toolbarToolPanel = document.createElement("section");
+
+  private readonly toolbarToolTitle = document.createElement("strong");
+
+  private readonly toolbarToolModeField = document.createElement("label");
+
+  private readonly toolbarToolModeLabel = document.createElement("span");
+
+  private readonly toolbarToolModeSelect = document.createElement("select");
+
+  private readonly toolbarToolValueField = document.createElement("label");
+
+  private readonly toolbarToolValueLabel = document.createElement("span");
+
+  private readonly toolbarToolValueInput = document.createElement("input");
+
+  private activeToolbarTool?: "link" | "split" | "validation" | "conditional" | "find-special";
 
   private readonly pivotRowSelect = document.createElement("select");
 
@@ -684,9 +835,17 @@ export class DomSpreadsheetRenderer {
 
   private readonly viewport = document.createElement("div");
 
+  private readonly rowHeaders = document.createElement("div");
+
   private readonly surface = document.createElement("div");
 
   private readonly cellsLayer = document.createElement("div");
+
+  private readonly visualObjectsLayer = document.createElement("div");
+
+  private sheetZoom = 1;
+
+  private readonly splitPaneLayer = document.createElement("div");
 
   private readonly editor = document.createElement("input");
 
@@ -737,6 +896,8 @@ export class DomSpreadsheetRenderer {
 
   private editingCell?: { row: number; col: number; mode: "text" | "select" | "custom" };
 
+  private renderedHeaderColumns = new Set<number>();
+
   private autofillDrag?: {
     sourceRange: CellRange;
     preview?: AutofillPreview;
@@ -744,11 +905,31 @@ export class DomSpreadsheetRenderer {
 
   private activeCustomEditor?: CustomCellEditorInstance;
 
-  private validationFeedback?: { sheetId: string; row: number; col: number; message: string };
+  private validationFeedback?: { sheetId: string; row: number; col: number; message: string; isWarning?: boolean };
 
   private rowModelFeedback?: { sheetId: string; error?: string };
 
   private pivotFeedback?: { sheetId: string; message: string; isError: boolean };
+
+  private visualObjectInteraction?: VisualObjectInteractionState;
+
+  private visualObjectSurfaceMetrics?: VisualObjectSurfaceMetrics;
+
+  private visualObjectLastInteractionMoveTs = 0;
+
+  private lastViewportScrollRenderTs = 0;
+
+  private splitPaneDrag?: { axis: "horizontal" | "vertical"; index: number };
+
+  private readonly imageObjectElementById = new Map<string, HTMLElement>();
+
+  private readonly widgetObjectElementById = new Map<string, HTMLElement>();
+
+  private readonly widgetBodyElementById = new Map<string, HTMLElement>();
+
+  private readonly widgetRenderSignatureById = new Map<string, string>();
+
+  private readonly widgetCleanupById = new Map<string, () => void>();
 
   private pivotBuildController?: AbortController;
 
@@ -785,6 +966,12 @@ export class DomSpreadsheetRenderer {
   private findReplaceSearchVersion = 0;
 
   private findReplaceSearchHandle?: ScheduledFrameHandle;
+
+  private noteEditorCell?: { sheetId: string; row: number; col: number };
+
+  private localPresenceClientId?: string;
+
+  private formatPainterStyle?: CellStyle;
 
   private renderHandle?: ScheduledFrameHandle;
 
@@ -865,7 +1052,7 @@ export class DomSpreadsheetRenderer {
     return event?.isComposing === true || (target != null && this.composingTargets.has(target));
   }
 
-  private formatDisplayValue(value: CellPrimitive, rawDisplayValue: string): string {
+  private formatDisplayValue(value: CellPrimitive, rawDisplayValue: string, style?: CellStyle): string {
     const dateFormatter = this.getDateFormatter();
     if (dateFormatter && typeof value === "string") {
       const timestamp = toDateValue(value);
@@ -889,6 +1076,32 @@ export class DomSpreadsheetRenderer {
 
     const numeric = toNumericValue(value);
     if (numeric !== undefined) {
+      const format = style?.format;
+      if (format && format !== "General") {
+        const decimals = format.match(/\.(0+)/)?.[1].length ?? 0;
+        if (format.includes("%")) {
+          return new Intl.NumberFormat(locale, {
+            style: "percent",
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+          }).format(numeric);
+        }
+        if (format.includes("R$")) {
+          return new Intl.NumberFormat(locale ?? "pt-BR", {
+            style: "currency",
+            currency: "BRL",
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+          }).format(numeric);
+        }
+        if (/^[#,0]+(?:\.0+)?$/.test(format)) {
+          return new Intl.NumberFormat(locale, {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+            useGrouping: format.includes(",")
+          }).format(numeric);
+        }
+      }
       const numberFormatter = this.getNumberFormatter();
       if (numberFormatter) {
         return numberFormatter(numeric);
@@ -902,9 +1115,11 @@ export class DomSpreadsheetRenderer {
   }
 
   private getRenderedCellDisplayValue(sheetId: string, row: number, col: number): string {
+    const cell = this.engine.getCell(sheetId, row, col);
     return this.formatDisplayValue(
       this.getCellPrimitiveValue(sheetId, row, col),
-      this.engine.getDisplayValue(sheetId, row, col)
+      this.engine.getDisplayValue(sheetId, row, col),
+      cell?.style
     );
   }
 
@@ -929,7 +1144,9 @@ export class DomSpreadsheetRenderer {
   }
 
   private getColumnWidth(sheet: ReturnType<WorkbookEngine["getActiveSheet"]>, col: number): number {
-    return sheet.columns[col]?.hidden ? 0 : sheet.columns[col]?.width ?? this.engine.getSnapshot().settings.columnWidth;
+    return sheet.columns[col]?.hidden
+      ? 0
+      : (sheet.columns[col]?.width ?? this.engine.getSnapshot().settings.columnWidth) * this.sheetZoom;
   }
 
   private getResolvedRowCount(sheet: ReturnType<WorkbookEngine["getActiveSheet"]>): number {
@@ -991,6 +1208,18 @@ export class DomSpreadsheetRenderer {
     const sheet = this.engine.getActiveSheet();
     const activeAddress = this.getActiveAddress(sheet);
     if (this.getRemoteRequestModel(sheet.id) === undefined) {
+      if (this.engine.getRowModel(sheet.id).kind !== "clientSide") {
+        return;
+      }
+      const current = this.engine.getClientSideQuery(sheet.id);
+      const sort = (current?.sort ?? []).filter((item) => item.column !== activeAddress.col);
+      sort.push({ column: activeAddress.col, direction });
+      this.engine.applyClientSideSortFilter({
+        sheetId: sheet.id,
+        sort,
+        filters: current?.filters,
+        hasHeader: current?.hasHeader
+      });
       return;
     }
 
@@ -1054,6 +1283,16 @@ export class DomSpreadsheetRenderer {
     const activeAddress = this.getActiveAddress(sheet);
     const current = this.getRemoteRequestModel(sheet.id);
     if (current === undefined) {
+      if (this.engine.getRowModel(sheet.id).kind !== "clientSide") {
+        return;
+      }
+      const local = this.engine.getClientSideQuery(sheet.id);
+      this.engine.applyClientSideSortFilter({
+        sheetId: sheet.id,
+        sort: local?.sort.filter((item) => item.column !== activeAddress.col),
+        filters: local?.filters.filter((item) => item.column !== activeAddress.col),
+        hasHeader: local?.hasHeader
+      });
       return;
     }
 
@@ -1068,6 +1307,67 @@ export class DomSpreadsheetRenderer {
     this.engine.updateRemoteRowModel(sheet.id, {
       sortModel: nextSortModel?.length ? nextSortModel : undefined,
       filterModel: Object.keys(nextFilterModel).length ? nextFilterModel : undefined
+    });
+  }
+
+  private applyLocalFilterForActiveColumn(): void {
+    const sheet = this.engine.getActiveSheet();
+    if (this.engine.getRowModel(sheet.id).kind !== "clientSide") {
+      return;
+    }
+    const activeAddress = this.getActiveAddress(sheet);
+    const type = this.toolbar.querySelector<HTMLSelectElement>("[data-local-filter-type]")?.value as ClientSideFilterDescriptor["type"];
+    const operator = this.toolbar.querySelector<HTMLSelectElement>("[data-local-filter-operator]")?.value as ClientSideFilterDescriptor["operator"];
+    const rawValue = this.toolbar.querySelector<HTMLInputElement>("[data-local-filter-value]")?.value.trim() ?? "";
+    const rawValueTo = this.toolbar.querySelector<HTMLInputElement>("[data-local-filter-value-to]")?.value.trim() ?? "";
+    if (!rawValue) {
+      return;
+    }
+    const toValue = (value: string): string | number => {
+      if (type !== "number") {
+        return value;
+      }
+      const normalized = value.replaceAll(" ", "").replace(",", ".");
+      return Number(normalized);
+    };
+    const value = toValue(rawValue);
+    const valueTo = rawValueTo ? toValue(rawValueTo) : undefined;
+    const valueIsInvalid = type === "number" && (typeof value !== "number" || !Number.isFinite(value));
+    const valueToIsInvalid = type === "number" && (typeof valueTo !== "number" || !Number.isFinite(valueTo));
+    if (valueIsInvalid || (operator === "between" && (valueTo === undefined || valueToIsInvalid))) {
+      return;
+    }
+    const descriptor: ClientSideFilterDescriptor = {
+      column: activeAddress.col,
+      type,
+      operator,
+      value
+    };
+    if (operator === "between" && valueTo !== undefined) descriptor.valueTo = valueTo;
+    const current = this.engine.getClientSideQuery(sheet.id);
+    const filters = (current?.filters ?? []).filter((item) => item.column !== activeAddress.col);
+    filters.push(descriptor);
+    this.viewport.scrollTop = 0;
+    this.engine.applyClientSideSortFilter({
+      sheetId: sheet.id,
+      sort: current?.sort,
+      filters,
+      hasHeader: current?.hasHeader
+    });
+  }
+
+  private clearLocalFilters(): void {
+    const sheet = this.engine.getActiveSheet();
+    if (this.engine.getRowModel(sheet.id).kind !== "clientSide") {
+      return;
+    }
+    const current = this.engine.getClientSideQuery(sheet.id);
+    this.viewport.scrollTop = 0;
+    this.engine.applyClientSideSortFilter({
+      sheetId: sheet.id,
+      sort: current?.sort,
+      filters: [],
+      hasHeader: current?.hasHeader
     });
   }
 
@@ -1221,7 +1521,9 @@ export class DomSpreadsheetRenderer {
   }
 
   private getRowHeight(sheet: ReturnType<WorkbookEngine["getActiveSheet"]>, row: number): number {
-    return sheet.rows[row]?.hidden ? 0 : sheet.rows[row]?.height ?? this.engine.getSnapshot().settings.rowHeight;
+    return sheet.rows[row]?.hidden
+      ? 0
+      : (sheet.rows[row]?.height ?? this.engine.getSnapshot().settings.rowHeight) * this.sheetZoom;
   }
 
   private isRowHidden(sheet: ReturnType<WorkbookEngine["getActiveSheet"]>, row: number): boolean {
@@ -1261,7 +1563,8 @@ export class DomSpreadsheetRenderer {
   ): number[] {
     const rows: number[] = [];
     const frozen = this.engine.getFrozenPane(sheet.id).rows;
-    appendRangeIndices(rows, 0, Math.max(-1, frozen - 1));
+    const split = this.engine.getSplitPane(sheet.id)?.horizontalRow ?? 0;
+    appendRangeIndices(rows, 0, Math.max(-1, Math.max(frozen, split) - 1));
     if (rowModelRows?.length) {
       for (const row of rowModelRows) {
         if (!rows.includes(row.index)) {
@@ -1280,19 +1583,22 @@ export class DomSpreadsheetRenderer {
   ): number[] {
     const columns: number[] = [];
     const frozen = this.engine.getFrozenPane(sheet.id).columns;
-    appendRangeIndices(columns, 0, Math.max(-1, frozen - 1));
+    const split = this.engine.getSplitPane(sheet.id)?.verticalColumn ?? 0;
+    appendRangeIndices(columns, 0, Math.max(-1, Math.max(frozen, split) - 1));
     appendRangeIndices(columns, visibleColumns.start, visibleColumns.end);
     return columns.filter((col) => col >= 0 && col < sheet.columnCount);
   }
 
   private getFrozenAdjustedTop(sheetId: string, rowOffsets: number[], row: number): number {
     const frozenRows = this.engine.getFrozenPane(sheetId).rows;
-    return row < frozenRows ? rowOffsets[row] + this.viewport.scrollTop : rowOffsets[row];
+    const splitRows = this.engine.getSplitPane(sheetId)?.horizontalRow ?? 0;
+    return row < Math.max(frozenRows, splitRows) ? rowOffsets[row] + this.viewport.scrollTop : rowOffsets[row];
   }
 
   private getFrozenAdjustedLeft(sheetId: string, colOffsets: number[], col: number): number {
     const frozenColumns = this.engine.getFrozenPane(sheetId).columns;
-    return col < frozenColumns ? colOffsets[col] + this.viewport.scrollLeft : colOffsets[col];
+    const splitColumns = this.engine.getSplitPane(sheetId)?.verticalColumn ?? 0;
+    return col < Math.max(frozenColumns, splitColumns) ? colOffsets[col] + this.viewport.scrollLeft : colOffsets[col];
   }
 
   private getCellPrimitiveValue(sheetId: string, row: number, col: number): CellPrimitive {
@@ -1481,7 +1787,10 @@ export class DomSpreadsheetRenderer {
   private getInteractiveValidationRule(sheetId: string, row: number, col: number): InteractiveValidationRule | undefined {
     return this.engine
       .getCellValidation(sheetId, row, col)
-      ?.rules.find((rule): rule is InteractiveValidationRule => isListValidationRule(rule) || isCheckboxValidationRule(rule));
+      ?.rules.find(
+        (rule): rule is InteractiveValidationRule =>
+          isListValidationRule(rule) || isCheckboxValidationRule(rule) || isDateValidationRule(rule)
+      );
   }
 
   private getMergeAt(sheet: ReturnType<WorkbookEngine["getActiveSheet"]>, row: number, col: number): SheetMerge | undefined {
@@ -1983,13 +2292,19 @@ export class DomSpreadsheetRenderer {
     onValidationError: () => void
   ): boolean {
     try {
+      const validation = this.engine.validateCellValue({ sheetId, row, col, value });
       this.engine.setCellValue({
         sheetId,
         row,
         col,
         value
       });
-      this.clearValidationFeedback();
+      if (validation.issue?.severity === "warning") {
+        this.validationFeedback = { sheetId, row, col, message: validation.issue.message, isWarning: true };
+        this.render();
+      } else {
+        this.clearValidationFeedback();
+      }
       return true;
     } catch (error) {
       if (error instanceof CellValidationError) {
@@ -2102,7 +2417,51 @@ export class DomSpreadsheetRenderer {
     const validationRule = this.getInteractiveValidationRule(sheetId, row, col);
 
     if (!validationRule) {
-      cell.textContent = value;
+      const model = this.engine.getCell(sheetId, row, col);
+      if (!model?.formula && model?.richText?.length) {
+        const style = this.getCellStyle(sheet, row, col);
+        const content = document.createElement("span");
+        content.className = "excelsior-cell-content excelsior-cell-rich-text";
+        content.style.overflow = style?.overflow === "visible" ? "visible" : "hidden";
+        content.style.textOverflow = style?.overflow === "ellipsis" ? "ellipsis" : "clip";
+        for (const segment of model.richText) {
+          const href = getSafeRichTextHref(segment.hyperlink);
+          if (!href && !segment.style) {
+            content.append(document.createTextNode(segment.text));
+            continue;
+          }
+
+          const node = document.createElement(href ? "a" : "span");
+          node.textContent = segment.text;
+          node.style.fontWeight = segment.style?.bold ? "bold" : "";
+          node.style.fontStyle = segment.style?.italic ? "italic" : "";
+          node.style.textDecorationLine = [
+            segment.style?.underline ? "underline" : "",
+            segment.style?.strike ? "line-through" : ""
+          ].filter(Boolean).join(" ");
+          node.style.color = segment.style?.color ?? "";
+          if (node instanceof HTMLAnchorElement && href) {
+            node.href = href;
+            node.rel = "noopener noreferrer";
+            if (href.startsWith("https:")) {
+              node.target = "_blank";
+            }
+          }
+          content.append(node);
+        }
+        cell.replaceChildren(content);
+        if (!cell.title && !style?.wrap && ["clip", "ellipsis"].includes(style?.overflow ?? "")) {
+          cell.title = model.richText.map((segment) => segment.text).join("");
+        }
+        return;
+      }
+      const content = document.createElement("span");
+      content.className = "excelsior-cell-content";
+      content.textContent = value;
+      cell.replaceChildren(content);
+      if (!cell.title && !model?.style?.wrap && ["clip", "ellipsis"].includes(model?.style?.overflow ?? "")) {
+        cell.title = value;
+      }
       return;
     }
 
@@ -2161,7 +2520,7 @@ export class DomSpreadsheetRenderer {
       end: { row, col }
     };
     element.style.top = `${rowOffsets[targetRange.start.row]}px`;
-    element.style.left = `${colOffsets[targetRange.start.col]}px`;
+    element.style.left = `${ROW_HEADER_WIDTH + colOffsets[targetRange.start.col]}px`;
     element.style.width = `${getSpanSize(colOffsets, targetRange.start.col, targetRange.end.col) - 2}px`;
     element.style.height = `${getSpanSize(rowOffsets, targetRange.start.row, targetRange.end.row) - 2}px`;
   }
@@ -2186,9 +2545,13 @@ export class DomSpreadsheetRenderer {
     cell.style.fontSize = style.fontSize ? `${style.fontSize}px` : "";
     cell.style.fontWeight = style.fontWeight ?? "";
     cell.style.fontStyle = style.fontStyle ?? "";
-    cell.style.textDecoration = style.underline ? "underline" : "";
+    cell.style.textDecorationLine = [style.underline ? "underline" : "", style.strike ? "line-through" : ""]
+      .filter(Boolean)
+      .join(" ");
     cell.style.whiteSpace = style.wrap ? "normal" : "nowrap";
     cell.style.lineHeight = style.wrap ? "1.35" : "1";
+    cell.style.overflow = style.overflow === "visible" ? "visible" : "hidden";
+    cell.style.textOverflow = style.overflow === "ellipsis" ? "ellipsis" : "clip";
     cell.style.paddingLeft = `${8 + (style.indent ?? 0) * 8}px`;
     cell.style.borderTopStyle = style.border?.top?.style ?? "solid";
     cell.style.borderTopColor = style.border?.top?.color ?? "";
@@ -2215,7 +2578,7 @@ export class DomSpreadsheetRenderer {
     });
   }
 
-  private applyStyleToSelection(style: Partial<CellStyle>): void {
+  private applyStyleToSelection(style: Partial<CellStyle>, mode: "merge" | "replace" = "merge"): void {
     const sheet = this.engine.getActiveSheet();
     const processed = new Set<string>();
     for (let row = sheet.selection.start.row; row <= sheet.selection.end.row; row += 1) {
@@ -2230,10 +2593,345 @@ export class DomSpreadsheetRenderer {
           sheetId: sheet.id,
           row: address.row,
           col: address.col,
-          style
+          style,
+          mode
         });
       }
     }
+  }
+
+  private applyQuickSum(): void {
+    const sheet = this.engine.getActiveSheet();
+    const selection = sheet.selection;
+    let source = selection;
+    let target = { row: selection.end.row + 1, col: selection.end.col };
+    if (selection.start.row === selection.end.row && selection.start.col === selection.end.col) {
+      target = { ...selection.start };
+      let startRow = target.row - 1;
+      while (startRow >= 0 && toNumericValue(this.getCellPrimitiveValue(sheet.id, startRow, target.col)) !== undefined) {
+        startRow -= 1;
+      }
+      source = {
+        start: { row: startRow + 1, col: target.col },
+        end: { row: target.row - 1, col: target.col }
+      };
+    }
+    if (target.row < 0 || target.row >= sheet.rowCount || source.end.row < source.start.row) {
+      return;
+    }
+    const from = `${columnIndexToLabel(source.start.col)}${source.start.row + 1}`;
+    const to = `${columnIndexToLabel(source.end.col)}${source.end.row + 1}`;
+    this.engine.setCellValue({ sheetId: sheet.id, row: target.row, col: target.col, value: `=SUM(${from}:${to})` });
+    this.engine.selectRange({ sheetId: sheet.id, rowStart: target.row, rowEnd: target.row, colStart: target.col, colEnd: target.col });
+  }
+
+  private mergeSelectionByAxis(axis: "horizontal" | "vertical"): void {
+    const sheet = this.engine.getActiveSheet();
+    if (axis === "horizontal") {
+      for (let row = sheet.selection.start.row; row <= sheet.selection.end.row; row += 1) {
+        this.engine.mergeCells({
+          sheetId: sheet.id,
+          start: { row, col: sheet.selection.start.col },
+          end: { row, col: sheet.selection.end.col }
+        });
+      }
+      return;
+    }
+    for (let col = sheet.selection.start.col; col <= sheet.selection.end.col; col += 1) {
+      this.engine.mergeCells({
+        sheetId: sheet.id,
+        start: { row: sheet.selection.start.row, col },
+        end: { row: sheet.selection.end.row, col }
+      });
+    }
+  }
+
+  private applyBorder(position: "all" | "top" | "right" | "bottom" | "left" | "none"): void {
+    if (position === "none") {
+      this.applyStyleToSelection({ border: {} });
+      return;
+    }
+    const edge = { color: "#334155", style: "thin" as const };
+    this.applyStyleToSelection({
+      border: position === "all"
+        ? { top: edge, right: edge, bottom: edge, left: edge }
+        : { [position]: edge }
+    });
+  }
+
+  private insertLink(hyperlink: string): void {
+    const sheet = this.engine.getActiveSheet();
+    const address = this.getActiveAddress(sheet);
+    const current = this.engine.getDisplayValue(sheet.id, address.row, address.col);
+    if (!hyperlink.trim()) return;
+    this.engine.setCellRichText({
+      sheetId: sheet.id,
+      row: address.row,
+      col: address.col,
+      richText: [{ text: current || hyperlink, hyperlink: hyperlink.trim() }]
+    });
+  }
+
+  private splitSelectedColumn(separator: string): void {
+    if (!separator) return;
+    const sheet = this.engine.getActiveSheet();
+    const sourceColumn = sheet.selection.start.col;
+    for (let row = sheet.selection.start.row; row <= sheet.selection.end.row; row += 1) {
+      const parts = String(this.getCellPrimitiveValue(sheet.id, row, sourceColumn) ?? "").split(separator);
+      parts.forEach((part, index) => {
+        if (sourceColumn + index < sheet.columnCount) {
+          this.engine.setCellValue({ sheetId: sheet.id, row, col: sourceColumn + index, value: part.trim() });
+        }
+      });
+    }
+  }
+
+  private exportVisibleGridSvg(): void {
+    const bounds = this.viewport.getBoundingClientRect();
+    const clone = this.viewport.cloneNode(true) as HTMLElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1, bounds.width)}" height="${Math.max(1, bounds.height)}"><foreignObject width="100%" height="100%">${clone.outerHTML}</foreignObject></svg>`;
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${this.engine.getActiveSheet().name}.svg`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  private updateSheetZoom(delta?: number): void {
+    this.sheetZoom = delta === undefined ? 1 : Math.max(0.5, Math.min(2, Math.round((this.sheetZoom + delta) * 10) / 10));
+    this.render();
+  }
+
+  private configureSelectionValidation(modeInput: string, rawValue: string): void {
+    const mode = modeInput.trim().toLocaleLowerCase();
+    if (!mode) return;
+    const sheet = this.engine.getActiveSheet();
+    let validation: CellValidationConfig | undefined;
+    if (mode === "lista") {
+      const values = rawValue
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      if (!values.length) return;
+      validation = { rules: [{ type: "dropdown", values }] };
+    } else if (mode === "número" || mode === "numero") {
+      validation = { rules: [{ type: "number" }] };
+    } else if (mode === "data") {
+      validation = { rules: [{ type: "date" }] };
+    } else if (mode === "checkbox") {
+      validation = { rules: [{ type: "checkbox" }] };
+    } else if (mode !== "remover") {
+      return;
+    }
+    for (let row = sheet.selection.start.row; row <= sheet.selection.end.row; row += 1) {
+      for (let col = sheet.selection.start.col; col <= sheet.selection.end.col; col += 1) {
+        this.engine.setCellValidation({ sheetId: sheet.id, row, col, validation });
+      }
+    }
+  }
+
+  private configureConditionalFormatting(modeInput: string, rawValue: string): void {
+    const mode = modeInput.trim().toLocaleLowerCase();
+    if (!mode) return;
+    const sheet = this.engine.getActiveSheet();
+    const range = this.normalizeRange(sheet.selection);
+    const existing = this.engine.getConditionalFormattingRules(sheet.id);
+    if (mode === "remover") {
+      this.engine.setConditionalFormattingRules(sheet.id, existing.filter((rule) => !rangesOverlap(rule.range, range)));
+      return;
+    }
+    const base = { id: `toolbar-${Date.now()}-${existing.length}`, range, priority: 10 };
+    if (mode === "maior") {
+      const value = Number(rawValue.replace(",", "."));
+      if (!Number.isFinite(value)) return;
+      this.engine.setConditionalFormattingRules(sheet.id, [...existing, {
+        ...base,
+        type: "greaterThan",
+        value,
+        style: { backgroundColor: "#fef08a", textColor: "#713f12", fontWeight: "bold" }
+      }]);
+    } else if (mode === "texto") {
+      const text = rawValue.trim();
+      if (!text) return;
+      this.engine.setConditionalFormattingRules(sheet.id, [...existing, {
+        ...base,
+        type: "containsText",
+        text,
+        style: { backgroundColor: "#bfdbfe", textColor: "#1e3a8a" }
+      }]);
+    } else if (mode === "duplicados") {
+      this.engine.setConditionalFormattingRules(sheet.id, [...existing, {
+        ...base,
+        type: "duplicates",
+        style: { backgroundColor: "#fecaca", textColor: "#7f1d1d" }
+      }]);
+    } else if (mode === "escala") {
+      this.engine.setConditionalFormattingRules(sheet.id, [...existing, {
+        ...base,
+        type: "colorScale",
+        minColor: "#dcfce7",
+        maxColor: "#ef4444"
+      }]);
+    }
+  }
+
+  private findSpecialCell(modeInput: string): void {
+    const mode = modeInput.trim().toLocaleLowerCase();
+    if (!mode) return;
+    const sheet = this.engine.getActiveSheet();
+    for (let row = 0; row < sheet.rowCount; row += 1) {
+      for (let col = 0; col < sheet.columnCount; col += 1) {
+        const cell = this.engine.getCell(sheet.id, row, col);
+        const value = cell?.value;
+        const matches = mode === "fórmulas" || mode === "formulas"
+          ? typeof value === "string" && value.startsWith("=")
+          : mode === "vazias"
+            ? value === undefined || value === null || value === ""
+            : mode === "erros"
+              ? Boolean(cell?.error)
+              : mode === "constantes"
+                ? value !== undefined && value !== null && !(typeof value === "string" && value.startsWith("="))
+                : false;
+        if (matches) {
+          this.engine.selectRange({ sheetId: sheet.id, rowStart: row, rowEnd: row, colStart: col, colEnd: col });
+          const rowOffsets = buildOffsets(sheet.rowCount, (index) => this.getRowHeight(sheet, index));
+          const colOffsets = buildOffsets(sheet.columnCount, (index) => this.getColumnWidth(sheet, index));
+          this.viewport.scrollTop = rowOffsets[row] ?? 0;
+          this.viewport.scrollLeft = colOffsets[col] ?? 0;
+          return;
+        }
+      }
+    }
+  }
+
+  private openToolbarTool(tool: NonNullable<DomSpreadsheetRenderer["activeToolbarTool"]>): void {
+    const definitions = {
+      link: { title: "Inserir link", modes: [] as Array<[string, string]>, valueLabel: "Endereço HTTPS ou mailto", value: "https://" },
+      split: { title: "Dividir coluna", modes: [] as Array<[string, string]>, valueLabel: "Separador", value: "," },
+      validation: {
+        title: "Validação de dados",
+        modes: [["lista", "Lista"], ["numero", "Número"], ["data", "Data"], ["checkbox", "Checkbox"], ["remover", "Remover"]] as Array<[string, string]>,
+        valueLabel: "Valores separados por vírgula",
+        value: "Sim,Não"
+      },
+      conditional: {
+        title: "Formatação condicional",
+        modes: [["maior", "Maior que"], ["texto", "Contém texto"], ["duplicados", "Duplicados"], ["escala", "Escala de cores"], ["remover", "Remover"]] as Array<[string, string]>,
+        valueLabel: "Valor",
+        value: "0"
+      },
+      "find-special": {
+        title: "Localizar células especiais",
+        modes: [["formulas", "Fórmulas"], ["vazias", "Vazias"], ["erros", "Erros"], ["constantes", "Constantes"]] as Array<[string, string]>,
+        valueLabel: "",
+        value: ""
+      }
+    } as const;
+    const definition = definitions[tool];
+    this.activeToolbarTool = tool;
+    this.toolbarToolTitle.textContent = definition.title;
+    this.toolbarToolModeSelect.replaceChildren(...definition.modes.map(([value, label]) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }));
+    this.toolbarToolModeField.hidden = definition.modes.length === 0;
+    this.toolbarToolValueLabel.textContent = definition.valueLabel;
+    this.toolbarToolValueInput.value = definition.value;
+    this.updateToolbarToolFields();
+    this.toolbarToolPanel.hidden = false;
+    (this.toolbarToolModeField.hidden ? this.toolbarToolValueInput : this.toolbarToolModeSelect).focus();
+  }
+
+  private readonly updateToolbarToolFields = (): void => {
+    const mode = this.toolbarToolModeSelect.value;
+    const needsValue = this.activeToolbarTool === "link" || this.activeToolbarTool === "split"
+      || (this.activeToolbarTool === "validation" && mode === "lista")
+      || (this.activeToolbarTool === "conditional" && (mode === "maior" || mode === "texto"));
+    this.toolbarToolValueField.hidden = !needsValue;
+    if (this.activeToolbarTool === "conditional") {
+      this.toolbarToolValueLabel.textContent = mode === "texto" ? "Texto" : "Valor";
+    }
+  };
+
+  private closeToolbarTool(): void {
+    this.toolbarToolPanel.hidden = true;
+    this.activeToolbarTool = undefined;
+    this.focus();
+  }
+
+  private applyToolbarTool(): void {
+    const tool = this.activeToolbarTool;
+    const mode = this.toolbarToolModeSelect.value;
+    const value = this.toolbarToolValueInput.value;
+    this.toolbarToolPanel.hidden = true;
+    if (tool === "link") this.insertLink(value);
+    else if (tool === "split") this.splitSelectedColumn(value);
+    else if (tool === "validation") this.configureSelectionValidation(mode, value);
+    else if (tool === "conditional") this.configureConditionalFormatting(mode, value);
+    else if (tool === "find-special") this.findSpecialCell(mode);
+    this.activeToolbarTool = undefined;
+    this.render();
+    this.focus();
+  }
+
+  private readonly handleToolbarToolClick = (event: Event): void => {
+    const action = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-tool-action]")?.dataset.toolAction;
+    if (action === "apply") this.applyToolbarTool();
+    else if (action === "cancel") this.closeToolbarTool();
+  };
+
+  private readonly handleToolbarToolKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.closeToolbarTool();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      this.applyToolbarTool();
+    }
+  };
+
+  private applyFormatPainterToSelection(): void {
+    const sourceStyle = this.formatPainterStyle;
+    if (!sourceStyle) {
+      return;
+    }
+    const sheet = this.engine.getActiveSheet();
+    const processed = new Set<string>();
+    const operations: SpreadsheetOperation[] = [];
+    for (let row = sheet.selection.start.row; row <= sheet.selection.end.row; row += 1) {
+      for (let col = sheet.selection.start.col; col <= sheet.selection.end.col; col += 1) {
+        const { address } = this.resolveCellAddress(sheet, row, col);
+        const key = getCellKey(address.row, address.col);
+        if (processed.has(key)) {
+          continue;
+        }
+        processed.add(key);
+        const previousCell = this.engine.getCell(sheet.id, address.row, address.col);
+        operations.push({
+          op: previousCell ? "replace" : "add",
+          id: sheet.id,
+          path: ["cells", key],
+          value: {
+            ...previousCell,
+            value: previousCell?.value ?? null,
+            computedValue: previousCell?.computedValue ?? previousCell?.value ?? null,
+            style: cloneSerializable(sourceStyle)
+          }
+        });
+      }
+    }
+    if (operations.length) {
+      this.engine.applyBatchOperations({
+        anchorSheetId: sheet.id,
+        operations,
+        affectedRanges: [sheet.selection]
+      });
+    }
+    this.formatPainterStyle = undefined;
   }
 
   private getActiveFindReplaceMatch(): FindReplaceMatch | undefined {
@@ -2714,8 +3412,13 @@ export class DomSpreadsheetRenderer {
     };
     this.direction = options.localization?.direction ?? "ltr";
     this.root.className = "excelsior-shell";
+    this.gridPanel.className = "excelsior-grid-panel";
     this.chrome.className = "excelsior-chrome";
     this.toolbar.className = "excelsior-toolbar";
+    this.imageFileInput.type = "file";
+    this.imageFileInput.accept = "image/png,image/jpeg,image/gif,image/webp";
+    this.imageFileInput.hidden = true;
+    this.imageFileInput.addEventListener("change", this.handleImageFileChange);
     this.formulaBar.className = "excelsior-formula-bar";
     this.formulaAddress.className = "excelsior-formula-address";
     this.formulaInput.className = "excelsior-formula-input";
@@ -2724,8 +3427,11 @@ export class DomSpreadsheetRenderer {
     this.statusMessage.setAttribute("aria-live", "polite");
     this.statusMessage.setAttribute("aria-atomic", "true");
     this.findReplacePanel.className = "excelsior-find-replace";
+    this.notePanel.className = "excelsior-note-panel";
     this.pivotPanel.className = "excelsior-find-replace excelsior-pivot-panel";
+    this.toolbarToolPanel.className = "excelsior-find-replace excelsior-toolbar-tool-panel";
     this.viewport.className = "excelsior-viewport";
+    this.rowHeaders.className = "excelsior-row-headers";
     this.viewport.tabIndex = 0;
     this.viewport.setAttribute("role", "grid");
     this.viewport.setAttribute("aria-label", this.messages.gridLabel);
@@ -2733,8 +3439,11 @@ export class DomSpreadsheetRenderer {
     this.root.dir = this.direction;
     this.viewport.dir = this.direction;
     this.root.classList.toggle("is-rtl", this.isRtl());
+    this.rowHeaders.setAttribute("aria-hidden", "true");
     this.surface.className = "excelsior-surface";
     this.cellsLayer.className = "excelsior-cells";
+    this.visualObjectsLayer.className = "excelsior-visual-objects-layer";
+    this.splitPaneLayer.className = "excelsior-split-pane-layer";
     this.editor.className = "excelsior-editor";
     this.selectEditor.className = "excelsior-select-editor";
     this.customEditorHost.className = "excelsior-custom-editor-host";
@@ -2746,6 +3455,8 @@ export class DomSpreadsheetRenderer {
     this.formulaInput.type = "text";
     this.formulaInput.setAttribute("aria-label", this.messages.formulaInputLabel);
     this.findReplacePanel.hidden = true;
+    this.notePanel.hidden = true;
+    this.toolbarToolPanel.hidden = true;
     this.findReplaceQueryInput.type = "text";
     this.findReplaceQueryInput.placeholder = this.messages.findPlaceholder;
     this.findReplaceQueryInput.className = "excelsior-find-replace-input";
@@ -2761,6 +3472,30 @@ export class DomSpreadsheetRenderer {
     this.activeCellAnnouncement.setAttribute("aria-atomic", "true");
     this.sheetTabs.setAttribute("role", "tablist");
     this.sheetTabs.setAttribute("aria-label", this.messages.sheetTabsLabel);
+
+    this.toolbarToolPanel.setAttribute("role", "dialog");
+    this.toolbarToolPanel.setAttribute("aria-modal", "false");
+    this.toolbarToolPanel.dataset.toolbarToolPanel = "true";
+    this.toolbarToolTitle.className = "excelsior-toolbar-tool-title";
+    this.toolbarToolModeField.className = "excelsior-find-replace-field";
+    this.toolbarToolModeLabel.textContent = "Opção";
+    this.toolbarToolModeSelect.className = "excelsior-find-replace-input";
+    this.toolbarToolModeSelect.dataset.toolbarToolMode = "true";
+    this.toolbarToolModeField.append(this.toolbarToolModeLabel, this.toolbarToolModeSelect);
+    this.toolbarToolValueField.className = "excelsior-find-replace-field";
+    this.toolbarToolValueInput.className = "excelsior-find-replace-input";
+    this.toolbarToolValueInput.dataset.toolbarToolValue = "true";
+    this.toolbarToolValueField.append(this.toolbarToolValueLabel, this.toolbarToolValueInput);
+    const toolbarToolActions = document.createElement("div");
+    toolbarToolActions.className = "excelsior-find-replace-actions";
+    const toolbarToolApply = createFindReplaceActionButton("apply", "Aplicar");
+    toolbarToolApply.dataset.toolAction = "apply";
+    delete toolbarToolApply.dataset.findAction;
+    const toolbarToolCancel = createFindReplaceActionButton("cancel", "Cancelar");
+    toolbarToolCancel.dataset.toolAction = "cancel";
+    delete toolbarToolCancel.dataset.findAction;
+    toolbarToolActions.append(toolbarToolApply, toolbarToolCancel);
+    this.toolbarToolPanel.append(this.toolbarToolTitle, this.toolbarToolModeField, this.toolbarToolValueField, toolbarToolActions);
 
     const queryField = document.createElement("label");
     queryField.className = "excelsior-find-replace-field";
@@ -2794,6 +3529,38 @@ export class DomSpreadsheetRenderer {
     );
 
     this.findReplacePanel.append(queryField, replaceField, optionsRow, actionsRow, this.findReplaceResults);
+
+    const noteTitle = document.createElement("strong");
+    noteTitle.className = "excelsior-note-panel-title";
+    noteTitle.textContent = this.messages.cellNoteLabel;
+    this.noteInput.className = "excelsior-note-input";
+    this.noteInput.setAttribute("aria-label", this.messages.cellNoteLabel);
+    this.noteInput.maxLength = this.engine.getSnapshot().settings.maxCellLength;
+    this.noteSaveButton.textContent = this.messages.cellNoteSave;
+    this.noteSaveButton.dataset.noteAction = "save";
+    delete this.noteSaveButton.dataset.findAction;
+    this.noteRemoveButton.textContent = this.messages.cellNoteRemove;
+    this.noteRemoveButton.dataset.noteAction = "remove";
+    delete this.noteRemoveButton.dataset.findAction;
+    this.noteCloseButton.textContent = this.messages.cellNoteClose;
+    this.noteCloseButton.dataset.noteAction = "close";
+    delete this.noteCloseButton.dataset.findAction;
+    const noteActions = document.createElement("div");
+    noteActions.className = "excelsior-find-replace-actions";
+    noteActions.append(this.noteSaveButton, this.noteRemoveButton, this.noteCloseButton);
+    const commentTitle = document.createElement("strong");
+    commentTitle.className = "excelsior-note-panel-title";
+    commentTitle.textContent = "Comentários";
+    this.commentList.className = "excelsior-comment-list";
+    this.commentList.setAttribute("aria-live", "polite");
+    this.commentInput.className = "excelsior-note-input excelsior-comment-input";
+    this.commentInput.dataset.commentInput = "new";
+    this.commentInput.maxLength = this.engine.getSnapshot().settings.maxCellLength;
+    this.commentInput.setAttribute("aria-label", "Adicionar comentário");
+    const commentCreateButton = createFindReplaceActionButton("create", "Adicionar comentário");
+    commentCreateButton.dataset.commentAction = "create";
+    delete commentCreateButton.dataset.findAction;
+    this.notePanel.append(noteTitle, this.noteInput, noteActions, commentTitle, this.commentList, this.commentInput, commentCreateButton);
 
     this.pivotPanel.hidden = true;
     this.pivotRowSelect.className = "excelsior-find-replace-input";
@@ -2892,9 +3659,23 @@ export class DomSpreadsheetRenderer {
     pivotActions.append(this.pivotApplyButton, this.pivotCloseButton);
     this.pivotPanel.append(pivotRowField, pivotColumnField, pivotExecutionField, this.pivotValuesField, pivotToggles, pivotActions);
 
-    this.surface.append(this.cellsLayer, this.editor, this.selectEditor, this.customEditorHost);
-    this.formulaBar.append(this.formulaAddress, this.formulaInput, this.statusMessage, this.findReplacePanel, this.pivotPanel);
-    this.root.append(this.chrome, this.formulaBar, this.activeCellAnnouncement, this.viewport, this.sheetTabs);
+    this.surface.append(
+      this.cellsLayer,
+      this.visualObjectsLayer,
+      this.splitPaneLayer,
+      this.editor,
+      this.selectEditor,
+      this.customEditorHost
+    );
+    this.formulaBar.append(
+      this.formulaAddress,
+      this.formulaInput,
+      this.statusMessage,
+      this.findReplacePanel,
+      this.pivotPanel
+    );
+    this.root.append(this.chrome, this.formulaBar, this.activeCellAnnouncement, this.gridPanel, this.sheetTabs, this.imageFileInput);
+    this.gridPanel.append(this.viewport, this.rowHeaders, this.notePanel, this.toolbarToolPanel);
     this.viewport.append(this.surface);
     this.container.replaceChildren(this.root);
 
@@ -2909,6 +3690,10 @@ export class DomSpreadsheetRenderer {
   dispose(): void {
     this.cancelScheduledRender();
     this.cancelFindReplaceSearch();
+    if (this.localPresenceClientId) {
+      this.engine.removePresence(this.localPresenceClientId);
+      this.localPresenceClientId = undefined;
+    }
     this.resizeObserver?.disconnect();
     for (const unsubscribe of this.unsubscribeCallbacks) {
       unsubscribe();
@@ -2920,8 +3705,13 @@ export class DomSpreadsheetRenderer {
     this.toolbar.removeEventListener("click", this.handleToolbarClick);
     this.toolbar.removeEventListener("input", this.handleToolbarInput);
     this.toolbar.removeEventListener("keydown", this.handleToolbarKeyDown);
+    this.toolbarToolPanel.removeEventListener("click", this.handleToolbarToolClick);
+    this.toolbarToolPanel.removeEventListener("keydown", this.handleToolbarToolKeyDown);
+    this.toolbarToolModeSelect.removeEventListener("input", this.updateToolbarToolFields);
+    this.imageFileInput.removeEventListener("change", this.handleImageFileChange);
     this.chrome.removeEventListener("click", this.handleColumnHeaderClick);
     this.chrome.removeEventListener("keydown", this.handleColumnHeaderKeyDown);
+    this.rowHeaders.removeEventListener("click", this.handleRowHeaderClick);
     this.sheetTabs.removeEventListener("click", this.handleSheetTabClick);
     this.sheetTabs.removeEventListener("keydown", this.handleSheetTabsKeyDown);
     this.formulaInput.removeEventListener("keydown", this.handleFormulaInputKeyDown);
@@ -2933,6 +3723,8 @@ export class DomSpreadsheetRenderer {
     this.findReplacePanel.removeEventListener("keydown", this.handleFindReplacePanelKeyDown);
     this.findReplacePanel.removeEventListener("compositionstart", this.handleCompositionStart);
     this.findReplacePanel.removeEventListener("compositionend", this.handleCompositionEnd);
+    this.notePanel.removeEventListener("click", this.handleNotePanelClick);
+    this.notePanel.removeEventListener("keydown", this.handleNotePanelKeyDown);
     this.pivotPanel.removeEventListener("input", this.handlePivotPanelInput);
     this.pivotPanel.removeEventListener("click", this.handlePivotPanelClick);
     this.pivotPanel.removeEventListener("keydown", this.handlePivotPanelKeyDown);
@@ -2943,6 +3735,11 @@ export class DomSpreadsheetRenderer {
     this.cellsLayer.removeEventListener("mousemove", this.handleAutofillMouseMove);
     this.cellsLayer.removeEventListener("mouseup", this.handleAutofillMouseUp);
     this.cellsLayer.removeEventListener("dblclick", this.handleCellDoubleClick);
+    this.visualObjectsLayer.removeEventListener("mousedown", this.handleVisualObjectLayerMouseDown);
+    this.visualObjectsLayer.removeEventListener("click", this.handleVisualObjectLayerClick);
+    this.visualObjectsLayer.removeEventListener("keydown", this.handleVisualObjectKeyDown);
+    this.splitPaneLayer.removeEventListener("mousedown", this.handleSplitPaneMouseDown);
+    this.splitPaneLayer.removeEventListener("keydown", this.handleSplitPaneKeyDown);
     this.editor.removeEventListener("blur", this.handleEditorBlur);
     this.editor.removeEventListener("keydown", this.handleEditorKeyDown);
     this.editor.removeEventListener("compositionstart", this.handleCompositionStart);
@@ -2956,10 +3753,13 @@ export class DomSpreadsheetRenderer {
     this.colorPickerHandle.removeEventListener("mousedown", this.handleColorPickerMouseDown);
     globalThis.removeEventListener("mousemove", this.handleColorPickerMouseMove);
     globalThis.removeEventListener("mouseup", this.handleColorPickerMouseUp);
-    globalThis.removeEventListener("mousemove", this.handleColorSurfaceMouseMove);
-    globalThis.removeEventListener("mouseup", this.handleColorSurfaceMouseUp);
     globalThis.removeEventListener("mousemove", this.handleAutofillMouseMove);
     globalThis.removeEventListener("mouseup", this.handleAutofillMouseUp);
+    globalThis.removeEventListener("mousemove", this.handleVisualObjectInteractionMouseMove);
+    globalThis.removeEventListener("mouseup", this.handleVisualObjectInteractionMouseUp);
+    globalThis.removeEventListener("mousemove", this.handleSplitPaneMouseMove);
+    globalThis.removeEventListener("mouseup", this.handleSplitPaneMouseUp);
+    this.destroyAllWidgetRuntimes();
     this.destroyCustomEditor();
     this.colorPickerCard.remove();
     this.container.replaceChildren();
@@ -2982,7 +3782,26 @@ export class DomSpreadsheetRenderer {
         this.requestRender();
       }),
       this.engine.on("selection:changed", () => {
+        this.updateLocalPresence();
         this.requestRender();
+      }),
+      this.engine.on("collaboration:presenceChanged", () => {
+        this.requestRender();
+      }),
+      this.engine.on("collaboration:presenceRemoved", () => {
+        this.requestRender();
+      }),
+      this.engine.on("cell:commentCreated", () => {
+        this.renderCommentThreads();
+      }),
+      this.engine.on("cell:commentReplied", () => {
+        this.renderCommentThreads();
+      }),
+      this.engine.on("cell:commentResolved", () => {
+        this.renderCommentThreads();
+      }),
+      this.engine.on("cell:commentDeleted", () => {
+        this.renderCommentThreads();
       }),
       this.engine.on("row-model:changed", () => {
         this.clearRowModelWindowCache();
@@ -2997,6 +3816,9 @@ export class DomSpreadsheetRenderer {
     this.toolbar.addEventListener("click", this.handleToolbarClick);
     this.toolbar.addEventListener("input", this.handleToolbarInput);
     this.toolbar.addEventListener("keydown", this.handleToolbarKeyDown);
+    this.toolbarToolPanel.addEventListener("click", this.handleToolbarToolClick);
+    this.toolbarToolPanel.addEventListener("keydown", this.handleToolbarToolKeyDown);
+    this.toolbarToolModeSelect.addEventListener("input", this.updateToolbarToolFields);
     this.textColorInput.type = "color";
     this.textColorInput.value = "#000000";
     this.textColorInput.setAttribute("aria-hidden", "true");
@@ -3013,6 +3835,7 @@ export class DomSpreadsheetRenderer {
     this.colorPickerHandle.addEventListener("mousedown", this.handleColorPickerMouseDown);
     this.chrome.addEventListener("click", this.handleColumnHeaderClick);
     this.chrome.addEventListener("keydown", this.handleColumnHeaderKeyDown);
+    this.rowHeaders.addEventListener("click", this.handleRowHeaderClick);
     this.sheetTabs.addEventListener("click", this.handleSheetTabClick);
     this.sheetTabs.addEventListener("keydown", this.handleSheetTabsKeyDown);
     this.formulaInput.addEventListener("keydown", this.handleFormulaInputKeyDown);
@@ -3024,6 +3847,8 @@ export class DomSpreadsheetRenderer {
     this.findReplacePanel.addEventListener("keydown", this.handleFindReplacePanelKeyDown);
     this.findReplacePanel.addEventListener("compositionstart", this.handleCompositionStart);
     this.findReplacePanel.addEventListener("compositionend", this.handleCompositionEnd);
+    this.notePanel.addEventListener("click", this.handleNotePanelClick);
+    this.notePanel.addEventListener("keydown", this.handleNotePanelKeyDown);
     this.pivotPanel.addEventListener("input", this.handlePivotPanelInput);
     this.pivotPanel.addEventListener("click", this.handlePivotPanelClick);
     this.pivotPanel.addEventListener("keydown", this.handlePivotPanelKeyDown);
@@ -3034,6 +3859,11 @@ export class DomSpreadsheetRenderer {
     this.cellsLayer.addEventListener("mousemove", this.handleAutofillMouseMove);
     this.cellsLayer.addEventListener("mouseup", this.handleAutofillMouseUp);
     this.cellsLayer.addEventListener("dblclick", this.handleCellDoubleClick);
+    this.visualObjectsLayer.addEventListener("mousedown", this.handleVisualObjectLayerMouseDown);
+    this.visualObjectsLayer.addEventListener("click", this.handleVisualObjectLayerClick);
+    this.visualObjectsLayer.addEventListener("keydown", this.handleVisualObjectKeyDown);
+    this.splitPaneLayer.addEventListener("mousedown", this.handleSplitPaneMouseDown);
+    this.splitPaneLayer.addEventListener("keydown", this.handleSplitPaneKeyDown);
     this.editor.addEventListener("blur", this.handleEditorBlur);
     this.editor.addEventListener("keydown", this.handleEditorKeyDown);
     this.editor.addEventListener("compositionstart", this.handleCompositionStart);
@@ -3046,6 +3876,10 @@ export class DomSpreadsheetRenderer {
     this.customEditorHost.addEventListener("compositionend", this.handleCompositionEnd);
     globalThis.addEventListener("mousemove", this.handleAutofillMouseMove);
     globalThis.addEventListener("mouseup", this.handleAutofillMouseUp);
+    globalThis.addEventListener("mousemove", this.handleVisualObjectInteractionMouseMove);
+    globalThis.addEventListener("mouseup", this.handleVisualObjectInteractionMouseUp);
+    globalThis.addEventListener("mousemove", this.handleSplitPaneMouseMove);
+    globalThis.addEventListener("mouseup", this.handleSplitPaneMouseUp);
 
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(() => this.requestRender());
@@ -3057,12 +3891,144 @@ export class DomSpreadsheetRenderer {
   }
 
   private readonly handleScroll = (): void => {
+    const throttleMs = 16;
+    const now = Date.now();
+    if (throttleMs > 0 && now - this.lastViewportScrollRenderTs < throttleMs) {
+      return;
+    }
+    this.lastViewportScrollRenderTs = now;
     this.requestRender();
   };
 
   private readonly handleWindowResize = (): void => {
     this.requestRender();
   };
+
+  private findSplitIndex(offsets: number[], pointerOffset: number): number {
+    let bestIndex = 1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 1; index < offsets.length - 1; index += 1) {
+      const distance = Math.abs(offsets[index] - pointerOffset);
+      if (distance < bestDistance) {
+        bestIndex = index;
+        bestDistance = distance;
+      }
+    }
+    return bestIndex;
+  }
+
+  private readonly handleSplitPaneMouseDown = (event: MouseEvent): void => {
+    const divider = (event.target as HTMLElement).closest<HTMLElement>("[data-split-axis]");
+    const axis = divider?.dataset.splitAxis;
+    if (!divider || (axis !== "horizontal" && axis !== "vertical")) {
+      return;
+    }
+    event.preventDefault();
+    this.splitPaneDrag = { axis, index: Number(divider.dataset.splitIndex) };
+  };
+
+  private readonly handleSplitPaneMouseMove = (event: MouseEvent): void => {
+    if (!this.splitPaneDrag || !this.visualObjectSurfaceMetrics) {
+      return;
+    }
+    const rect = this.viewport.getBoundingClientRect();
+    const offsets = this.splitPaneDrag.axis === "horizontal"
+      ? this.visualObjectSurfaceMetrics.rowOffsets
+      : this.visualObjectSurfaceMetrics.colOffsets;
+    const pointerOffset = this.splitPaneDrag.axis === "horizontal"
+      ? event.clientY - rect.top
+      : event.clientX - rect.left - ROW_HEADER_WIDTH;
+    this.splitPaneDrag.index = this.findSplitIndex(offsets, pointerOffset);
+    const divider = this.splitPaneLayer.querySelector<HTMLElement>(`[data-split-axis='${this.splitPaneDrag.axis}']`);
+    if (divider) {
+      const position = offsets[this.splitPaneDrag.index];
+      divider.style[this.splitPaneDrag.axis === "horizontal" ? "top" : "left"] = `${position + (
+        this.splitPaneDrag.axis === "horizontal" ? this.viewport.scrollTop : this.viewport.scrollLeft + ROW_HEADER_WIDTH
+      )}px`;
+    }
+  };
+
+  private readonly handleSplitPaneMouseUp = (): void => {
+    if (!this.splitPaneDrag) {
+      return;
+    }
+    const sheet = this.engine.getActiveSheet();
+    const current = this.engine.getSplitPane(sheet.id) ?? {};
+    const next = this.splitPaneDrag.axis === "horizontal"
+      ? { ...current, horizontalRow: this.splitPaneDrag.index }
+      : { ...current, verticalColumn: this.splitPaneDrag.index };
+    this.splitPaneDrag = undefined;
+    this.engine.setSplitPane(sheet.id, next);
+  };
+
+  private readonly handleSplitPaneKeyDown = (event: KeyboardEvent): void => {
+    const divider = (event.target as HTMLElement).closest<HTMLElement>("[data-split-axis]");
+    const axis = divider?.dataset.splitAxis;
+    if (!divider || (axis !== "horizontal" && axis !== "vertical")) {
+      return;
+    }
+    const sheet = this.engine.getActiveSheet();
+    const current = this.engine.getSplitPane(sheet.id) ?? {};
+    if (event.key === "Delete") {
+      event.preventDefault();
+      const next = axis === "horizontal"
+        ? { ...current, horizontalRow: undefined }
+        : { ...current, verticalColumn: undefined };
+      this.engine.setSplitPane(sheet.id, next);
+      return;
+    }
+    let delta = 0;
+    if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      delta = -1;
+    } else if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      delta = 1;
+    }
+    if (!delta) {
+      return;
+    }
+    event.preventDefault();
+    const currentIndex = Number(divider.dataset.splitIndex);
+    const maxIndex = axis === "horizontal" ? sheet.rowCount - 1 : sheet.columnCount - 1;
+    const nextIndex = Math.min(Math.max(currentIndex + delta, 1), maxIndex);
+    this.engine.setSplitPane(sheet.id, axis === "horizontal"
+      ? { ...current, horizontalRow: nextIndex }
+      : { ...current, verticalColumn: nextIndex });
+  };
+
+  private renderSplitPanes(
+    sheet: ReturnType<WorkbookEngine["getActiveSheet"]>,
+    rowOffsets: number[],
+    colOffsets: number[]
+  ): void {
+    const splitPane = this.engine.getSplitPane(sheet.id);
+    const fragment = document.createDocumentFragment();
+    const appendDivider = (axis: "horizontal" | "vertical", index: number, position: number): void => {
+      const divider = document.createElement("div");
+      divider.className = `excelsior-split-divider is-${axis}`;
+      divider.dataset.splitAxis = axis;
+      divider.dataset.splitIndex = String(index);
+      divider.tabIndex = 0;
+      divider.setAttribute("role", "separator");
+      divider.setAttribute("aria-orientation", axis);
+      divider.setAttribute("aria-valuemin", "1");
+      divider.setAttribute("aria-valuemax", String(axis === "horizontal" ? sheet.rowCount - 1 : sheet.columnCount - 1));
+      divider.setAttribute("aria-valuenow", String(index));
+      divider.setAttribute("aria-label", axis === "horizontal" ? "Divisor horizontal" : "Divisor vertical");
+      divider.style[axis === "horizontal" ? "top" : "left"] = `${position}px`;
+      fragment.append(divider);
+    };
+    if (splitPane?.horizontalRow !== undefined) {
+      appendDivider("horizontal", splitPane.horizontalRow, rowOffsets[splitPane.horizontalRow] + this.viewport.scrollTop);
+    }
+    if (splitPane?.verticalColumn !== undefined) {
+      appendDivider(
+        "vertical",
+        splitPane.verticalColumn,
+        ROW_HEADER_WIDTH + colOffsets[splitPane.verticalColumn] + this.viewport.scrollLeft
+      );
+    }
+    this.splitPaneLayer.replaceChildren(fragment);
+  }
 
   private cancelScheduledRender(): void {
     cancelScheduledFrame(this.renderHandle);
@@ -3088,6 +4054,18 @@ export class DomSpreadsheetRenderer {
   }
 
   private readonly handleCellClick = (event: Event): void => {
+    const noteIndicator = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-cell-note]");
+    if (noteIndicator) {
+      const cell = noteIndicator.closest<HTMLElement>("[data-row][data-col]");
+      if (cell) {
+        const sheet = this.engine.getActiveSheet();
+        this.selectResolvedCell(sheet, Number(cell.dataset.row), Number(cell.dataset.col));
+        this.openNotePanel(sheet.id, Number(cell.dataset.row), Number(cell.dataset.col));
+      }
+      event.preventDefault();
+      return;
+    }
+
     const groupToggle = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-remote-group-toggle]");
     if (groupToggle) {
       const pathText = groupToggle.dataset.remoteGroupPath;
@@ -3110,11 +4088,15 @@ export class DomSpreadsheetRenderer {
     const col = Number(target.dataset.col);
     const sheet = this.engine.getActiveSheet();
     this.selectResolvedCell(sheet, row, col);
+    if (this.formatPainterStyle) {
+      this.applyFormatPainterToSelection();
+      this.render();
+    }
     this.focus();
   };
 
   private readonly handleCellDoubleClick = (event: Event): void => {
-    if ((event.target as HTMLElement | null)?.closest("[data-remote-group-toggle]")) {
+    if ((event.target as HTMLElement | null)?.closest("[data-remote-group-toggle], [data-cell-note]")) {
       return;
     }
 
@@ -3126,6 +4108,20 @@ export class DomSpreadsheetRenderer {
   };
 
   private readonly handleColumnHeaderClick = (event: Event): void => {
+    const corner = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-corner-action='select-all']");
+    if (corner) {
+      const sheet = this.engine.getActiveSheet();
+      this.engine.selectRange({
+        sheetId: sheet.id,
+        rowStart: 0,
+        rowEnd: Math.max(0, sheet.rowCount - 1),
+        colStart: 0,
+        colEnd: Math.max(0, sheet.columnCount - 1)
+      });
+      this.focus();
+      return;
+    }
+
     const target = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-column-header-col]");
     if (!target) {
       return;
@@ -3153,6 +4149,19 @@ export class DomSpreadsheetRenderer {
 
     event.preventDefault();
     this.handleColumnHeaderClick(event);
+  };
+
+  private readonly handleRowHeaderClick = (event: Event): void => {
+    const target = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-row-header-row]");
+    if (!target) {
+      return;
+    }
+
+    const row = Number(target.dataset.rowHeaderRow);
+    const sheet = this.engine.getActiveSheet();
+    const activeAddress = this.getActiveAddress(sheet);
+    this.selectResolvedCell(sheet, row, activeAddress.col);
+    this.focus();
   };
 
   private readonly handleCompositionStart = (event: CompositionEvent): void => {
@@ -3911,6 +4920,164 @@ export class DomSpreadsheetRenderer {
     }
   };
 
+  private openNotePanel(sheetId: string, row: number, col: number): void {
+    this.noteEditorCell = { sheetId, row, col };
+    this.noteInput.value = this.engine.getCellNote(sheetId, row, col) ?? "";
+    this.noteRemoveButton.disabled = this.noteInput.value.length === 0;
+    this.commentInput.value = "";
+    this.renderCommentThreads();
+    this.notePanel.hidden = false;
+    this.noteInput.focus();
+  }
+
+  private closeNotePanel(): void {
+    this.noteEditorCell = undefined;
+    this.notePanel.hidden = true;
+    this.noteInput.value = "";
+    this.commentInput.value = "";
+    this.commentList.replaceChildren();
+  }
+
+  private getCommentAuthor(): CommentAuthor {
+    return this.options.comments?.author ?? this.options.collaboration?.user ?? { id: "local", name: "Você" };
+  }
+
+  private createCommentAction(label: string, action: string, commentId: string): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.dataset.commentAction = action;
+    button.dataset.commentId = commentId;
+    return button;
+  }
+
+  private renderCommentThreads(): void {
+    const target = this.noteEditorCell;
+    const fragment = document.createDocumentFragment();
+    if (!target) {
+      this.commentList.replaceChildren();
+      return;
+    }
+    for (const comment of this.engine.getCellComments(target.sheetId, target.row, target.col)) {
+      const thread = document.createElement("article");
+      thread.className = "excelsior-comment-thread";
+      thread.dataset.commentThread = comment.id;
+      const header = document.createElement("div");
+      header.className = "excelsior-comment-header";
+      const author = document.createElement("strong");
+      author.textContent = comment.author.name?.trim() || "Participante";
+      const status = document.createElement("span");
+      status.textContent = comment.resolved ? "Resolvido" : "Aberto";
+      header.append(author, status);
+      const content = document.createElement("p");
+      content.textContent = comment.content;
+      thread.append(header, content);
+      for (const reply of comment.replies) {
+        const replyElement = document.createElement("div");
+        replyElement.className = "excelsior-comment-reply";
+        const replyAuthor = document.createElement("strong");
+        replyAuthor.textContent = reply.author.name?.trim() || "Participante";
+        const replyContent = document.createElement("span");
+        replyContent.textContent = reply.content;
+        replyElement.append(replyAuthor, replyContent);
+        thread.append(replyElement);
+      }
+      const replyInput = document.createElement("textarea");
+      replyInput.className = "excelsior-note-input excelsior-comment-reply-input";
+      replyInput.dataset.commentReply = comment.id;
+      replyInput.maxLength = this.engine.getSnapshot().settings.maxCellLength;
+      replyInput.setAttribute("aria-label", `Responder a ${comment.author.name?.trim() || "comentário"}`);
+      const actions = document.createElement("div");
+      actions.className = "excelsior-comment-actions";
+      actions.append(
+        this.createCommentAction("Responder", "reply", comment.id),
+        this.createCommentAction(comment.resolved ? "Reabrir" : "Resolver", comment.resolved ? "reopen" : "resolve", comment.id),
+        this.createCommentAction("Excluir", "delete", comment.id)
+      );
+      thread.append(replyInput, actions);
+      fragment.append(thread);
+    }
+    this.commentList.replaceChildren(fragment);
+  }
+
+  private updateLocalPresence(): void {
+    const collaboration = this.options.collaboration;
+    if (!collaboration) {
+      return;
+    }
+    const sheet = this.engine.getActiveSheet();
+    try {
+      const presence = this.engine.updatePresence({
+        user: collaboration.user,
+        cursor: { sheetId: sheet.id, ...sheet.selection.end },
+        selection: { sheetId: sheet.id, range: sheet.selection },
+        metadata: { color: SAFE_PRESENCE_COLOR.test(collaboration.color ?? "") ? collaboration.color : DEFAULT_PRESENCE_COLOR }
+      });
+      this.localPresenceClientId = presence.clientId;
+    } catch (error) {
+      if (!(error instanceof SpreadsheetOperationError) || error.details.code !== "CORE_COLLABORATION_REQUIRED") {
+        throw error;
+      }
+    }
+  }
+
+  private saveNoteFromPanel(note?: string): void {
+    const target = this.noteEditorCell;
+    if (!target) {
+      return;
+    }
+    this.engine.setCellNote({ ...target, note });
+    this.closeNotePanel();
+    this.render();
+    this.focus();
+  }
+
+  private readonly handleNotePanelClick = (event: Event): void => {
+    const commentButton = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-comment-action]");
+    const target = this.noteEditorCell;
+    if (commentButton && target) {
+      const action = commentButton.dataset.commentAction;
+      const commentId = commentButton.dataset.commentId;
+      if (action === "create") {
+        this.engine.createCellComment({ ...target, comment: { author: this.getCommentAuthor(), content: this.commentInput.value } });
+        this.commentInput.value = "";
+      } else if (commentId && action === "reply") {
+        const input = this.commentList.querySelector<HTMLTextAreaElement>(`[data-comment-reply='${commentId}']`);
+        this.engine.replyToCellComment({ ...target, commentId, reply: { author: this.getCommentAuthor(), content: input?.value ?? "" } });
+      } else if (commentId && (action === "resolve" || action === "reopen")) {
+        this.engine.resolveCellComment({ ...target, commentId, resolved: action === "resolve" });
+      } else if (commentId && action === "delete") {
+        this.engine.deleteCellComment({ ...target, commentId });
+      }
+      this.renderCommentThreads();
+      this.requestRender();
+      return;
+    }
+    const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-note-action]");
+    if (!button) {
+      return;
+    }
+    if (button.dataset.noteAction === "save") {
+      this.saveNoteFromPanel(this.noteInput.value);
+    } else if (button.dataset.noteAction === "remove") {
+      this.saveNoteFromPanel();
+    } else if (button.dataset.noteAction === "close") {
+      this.closeNotePanel();
+      this.focus();
+    }
+  };
+
+  private readonly handleNotePanelKeyDown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.closeNotePanel();
+      this.focus();
+    } else if (event.target === this.noteInput && event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      this.saveNoteFromPanel(this.noteInput.value);
+    }
+  };
+
   private readonly handleToolbarClick = (event: Event): void => {
     const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-action]");
     if (!button) {
@@ -3950,6 +5117,12 @@ export class DomSpreadsheetRenderer {
         return;
       case "find-replace":
         this.openFindReplacePanel();
+        return;
+      case "cell-note":
+        this.openNotePanel(sheet.id, activeAddress.row, activeAddress.col);
+        return;
+      case "insert-image":
+        this.imageFileInput.click();
         return;
       case "sort-asc":
         this.applyRemoteSortForActiveColumn("asc");
@@ -3991,6 +5164,14 @@ export class DomSpreadsheetRenderer {
         this.clearRemoteQueryForActiveColumn();
         this.focus();
         return;
+      case "apply-local-filter":
+        this.applyLocalFilterForActiveColumn();
+        this.focus();
+        return;
+      case "clear-local-filters":
+        this.clearLocalFilters();
+        this.focus();
+        return;
       case "bold":
         this.applyStyleToSelection({
           fontWeight: activeCell?.style?.fontWeight === "bold" ? "normal" : "bold"
@@ -4001,6 +5182,28 @@ export class DomSpreadsheetRenderer {
           fontStyle: activeCell?.style?.fontStyle === "italic" ? "normal" : "italic"
         });
         break;
+      case "underline":
+        this.applyStyleToSelection({ underline: !activeCell?.style?.underline });
+        break;
+      case "strike":
+        this.applyStyleToSelection({ strike: !activeCell?.style?.strike });
+        break;
+      case "clear-format":
+        this.applyStyleToSelection({}, "replace");
+        break;
+      case "currency-format":
+        this.applyStyleToSelection({ format: "R$ #,##0.00" });
+        break;
+      case "percentage-format":
+        this.applyStyleToSelection({ format: "0.00%" });
+        break;
+      case "number-decrease":
+      case "number-increase": {
+        const currentDecimals = activeCell?.style?.format?.match(/\.(0+)/)?.[1].length ?? 0;
+        const decimals = Math.max(0, Math.min(9, currentDecimals + (action === "number-increase" ? 1 : -1)));
+        this.applyStyleToSelection({ format: decimals ? `#,##0.${"0".repeat(decimals)}` : "#,##0" });
+        break;
+      }
       case "text-color":
         this.openColorPicker(this.textColorInput, this.messages.textColor);
         return;
@@ -4010,11 +5213,30 @@ export class DomSpreadsheetRenderer {
       case "fill-color":
         this.openColorPicker(this.fillColorInput, this.messages.fillColor);
         return;
+      case "format-painter":
+        this.formatPainterStyle = activeCell?.style ? cloneSerializable(activeCell.style) : {};
+        this.render();
+        this.focus();
+        return;
+      case "confirm-color":
+        if (this.pendingColorStyle) {
+          this.applyStyleToSelection(this.pendingColorStyle);
+          this.pendingColorStyle = undefined;
+          this.render();
+          this.focus();
+        }
+        return;
       case "wrap":
         this.applyStyleToSelection({
           wrap: !activeCell?.style?.wrap
         });
         break;
+      case "overflow": {
+        const modes: Array<NonNullable<CellStyle["overflow"]>> = ["clip", "ellipsis", "visible"];
+        const currentIndex = modes.indexOf(activeCell?.style?.overflow ?? "clip");
+        this.applyStyleToSelection({ overflow: modes[(currentIndex + 1) % modes.length] });
+        break;
+      }
       case "align-left":
         this.applyStyleToSelection({ align: "left" });
         break;
@@ -4024,12 +5246,88 @@ export class DomSpreadsheetRenderer {
       case "align-right":
         this.applyStyleToSelection({ align: "right" });
         break;
+      case "align-top":
+        this.applyStyleToSelection({ alignVertical: "top" });
+        break;
+      case "align-middle":
+        this.applyStyleToSelection({ alignVertical: "center" });
+        break;
+      case "align-bottom":
+        this.applyStyleToSelection({ alignVertical: "bottom" });
+        break;
+      case "rotate-clockwise":
+        this.applyStyleToSelection({ rotation: 45 });
+        break;
+      case "rotate-counterclockwise":
+        this.applyStyleToSelection({ rotation: -45 });
+        break;
+      case "rotate-none":
+        this.applyStyleToSelection({ rotation: 0 });
+        break;
+      case "border-all":
+        this.applyBorder("all");
+        break;
+      case "border-top":
+      case "border-right":
+      case "border-bottom":
+      case "border-left":
+        this.applyBorder(action.slice("border-".length) as "top" | "right" | "bottom" | "left");
+        break;
+      case "border-none":
+        this.applyBorder("none");
+        break;
+      case "insert-link":
+        this.openToolbarTool("link");
+        return;
+      case "split-column":
+        this.openToolbarTool("split");
+        return;
+      case "export-svg":
+        this.exportVisibleGridSvg();
+        break;
+      case "zoom-in":
+        this.updateSheetZoom(0.1);
+        return;
+      case "zoom-out":
+        this.updateSheetZoom(-0.1);
+        return;
+      case "zoom-reset":
+        this.updateSheetZoom();
+        return;
+      case "data-validation":
+        this.openToolbarTool("validation");
+        return;
+      case "conditional-formatting":
+        this.openToolbarTool("conditional");
+        return;
+      case "find-special":
+        this.openToolbarTool("find-special");
+        return;
+      case "quick-sum":
+        this.applyQuickSum();
+        break;
+      case "freeze-rows":
+        this.engine.freezeRows(sheet.id, activeAddress.row + 1);
+        break;
+      case "freeze-columns":
+        this.engine.freezeColumns(sheet.id, activeAddress.col + 1);
+        break;
+      case "unfreeze":
+        this.engine.freezeRows(sheet.id, 0);
+        this.engine.freezeColumns(sheet.id, 0);
+        break;
       case "merge":
         this.engine.mergeCells({
           sheetId: sheet.id,
           start: sheet.selection.start,
           end: sheet.selection.end
         });
+        break;
+      case "merge-horizontal":
+        this.mergeSelectionByAxis("horizontal");
+        break;
+      case "merge-vertical":
+        this.mergeSelectionByAxis("vertical");
         break;
       case "unmerge":
         this.engine.unmergeCells({
@@ -4046,7 +5344,54 @@ export class DomSpreadsheetRenderer {
     this.focus();
   };
 
+  private readonly handleImageFileChange = (): void => {
+    const file = this.imageFileInput.files?.[0];
+    this.imageFileInput.value = "";
+    if (!file || !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type)) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result !== "string") {
+        return;
+      }
+      const sheet = this.engine.getActiveSheet();
+      const address = this.getActiveAddress(sheet);
+      this.engine.createImage({
+        sheetId: sheet.id,
+        image: {
+          src: reader.result,
+          alt: file.name,
+          position: {
+            fromCell: cellAddressToLabel(address),
+            offsetX: 8,
+            offsetY: 8,
+            width: 320,
+            height: 220
+          }
+        }
+      });
+      this.requestRender();
+    }, { once: true });
+    reader.readAsDataURL(file);
+  };
+
   private readonly handleToolbarInput = (event: Event): void => {
+    const fontFamilySelect = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>("[data-font-family]");
+    if (fontFamilySelect) {
+      this.applyStyleToSelection({ fontFamily: fontFamilySelect.value });
+      return;
+    }
+    const fontSizeSelect = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>("[data-font-size]");
+    if (fontSizeSelect) {
+      this.applyStyleToSelection({ fontSize: Number(fontSizeSelect.value) });
+      return;
+    }
+    const formatSelect = (event.target as HTMLElement | null)?.closest<HTMLSelectElement>("[data-number-format]");
+    if (formatSelect) {
+      this.applyStyleToSelection({ format: formatSelect.value });
+      return;
+    }
     const input = (event.target as HTMLElement | null)?.closest<HTMLInputElement>("[data-remote-filter-input]");
     if (!input) {
       return;
@@ -4360,6 +5705,9 @@ export class DomSpreadsheetRenderer {
 
     this.editingCell = { ...address, mode: "text" };
 
+    this.editor.type = validationRule && isDateValidationRule(validationRule) ? "date" : "text";
+    this.editor.min = validationRule && isDateValidationRule(validationRule) ? validationRule.min ?? "" : "";
+    this.editor.max = validationRule && isDateValidationRule(validationRule) ? validationRule.max ?? "" : "";
     this.editor.hidden = false;
     this.editor.value = cell?.formula ?? (cell?.value == null ? "" : String(cell.value));
     this.positionEditor(address.row, address.col);
@@ -4395,8 +5743,14 @@ export class DomSpreadsheetRenderer {
     const pivotStatusIsError = this.pivotFeedback?.sheetId === sheet.id ? this.pivotFeedback.isError : derivedPivotStatus.isError;
     this.formulaAddress.textContent = label;
     this.statusMessage.textContent =
-      validationMessage ?? rowModelError ?? pivotStatus ?? (this.hasPendingRowModelRequests(sheet.id) ? this.messages.loadingRows : "");
-    this.statusMessage.classList.toggle("is-error", Boolean(validationMessage ?? rowModelError) || pivotStatusIsError);
+      validationMessage ??
+      rowModelError ??
+      pivotStatus ??
+      (this.hasPendingRowModelRequests(sheet.id) ? this.messages.loadingRows : "");
+    this.statusMessage.classList.toggle(
+      "is-error",
+      Boolean((validationMessage && !this.validationFeedback?.isWarning) || rowModelError) || pivotStatusIsError
+    );
     if (document.activeElement !== this.formulaInput) {
       this.formulaInput.value = value;
     }
@@ -4408,20 +5762,43 @@ export class DomSpreadsheetRenderer {
     this.validationFeedback = undefined;
   }
 
-  private renderChrome(): void {
+  private renderChrome(columnsToRender: number[]): void {
     const sheet = this.engine.getActiveSheet();
+    const selectionRange = this.getResolvedSelectionRange(sheet);
+    const activeAddress = this.getActiveAddress(sheet);
+    const fullSheetSelected =
+      selectionRange.start.row === 0 &&
+      selectionRange.start.col === 0 &&
+      selectionRange.end.row === this.getResolvedRowCount(sheet) - 1 &&
+      selectionRange.end.col === sheet.columnCount - 1;
     this.chrome.replaceChildren();
     const fragment = document.createDocumentFragment();
-    const corner = document.createElement("div");
+    const corner = document.createElement("button");
+    corner.type = "button";
     corner.className = "excelsior-corner";
-    corner.textContent = sheet.name;
-    corner.setAttribute("aria-hidden", "true");
-    fragment.append(corner);
+    if (fullSheetSelected) {
+      corner.classList.add("is-active");
+    }
+    corner.dataset.cornerAction = "select-all";
+    corner.setAttribute("aria-label", `Selecionar toda a ${this.messages.gridLabel.toLowerCase()}`);
+    corner.title = "Selecionar toda a planilha";
 
     const columnStrip = document.createElement("div");
     columnStrip.className = "excelsior-column-strip";
     const remoteRequestModel = this.getRemoteRequestModel(sheet.id);
-    for (let col = 0; col < Math.min(sheet.columnCount, 12); col += 1) {
+    const fixedColumnCount = Math.max(
+      this.engine.getFrozenPane(sheet.id).columns,
+      this.engine.getSplitPane(sheet.id)?.verticalColumn ?? 0
+    );
+    const renderedColumns: number[] = [];
+    for (let col = 0; col < sheet.columnCount; col += 1) {
+      if (!this.isColumnHidden(sheet, col)) {
+        renderedColumns.push(col);
+      }
+    }
+    this.renderedHeaderColumns = new Set(renderedColumns);
+
+    for (const col of renderedColumns) {
       const header = document.createElement("div");
       header.className = "excelsior-column-header";
       header.id = this.getColumnHeaderElementId(sheet.id, col);
@@ -4430,6 +5807,12 @@ export class DomSpreadsheetRenderer {
       header.setAttribute("aria-label", this.getColumnHeaderAccessibilityLabel(col));
       header.dataset.columnHeaderCol = String(col);
       header.tabIndex = 0;
+      if (col >= selectionRange.start.col && col <= selectionRange.end.col) {
+        header.classList.add("is-selected");
+      }
+      if (col === activeAddress.col) {
+        header.classList.add("is-active");
+      }
       if (remoteRequestModel !== undefined) {
         const direction = this.getActiveRemoteSortDirection(sheet.id, col);
         header.setAttribute(
@@ -4438,11 +5821,57 @@ export class DomSpreadsheetRenderer {
         );
       }
       header.style.width = `${this.getColumnWidth(sheet, col)}px`;
+      header.style.flex = "0 0 auto";
+      if (col < fixedColumnCount) {
+        header.style.zIndex = "1";
+      } else if (this.viewport.scrollLeft > 0) {
+        header.style.transform = `translateX(-${this.viewport.scrollLeft}px)`;
+      }
       header.textContent = columnIndexToLabel(col);
       columnStrip.append(header);
     }
-    fragment.append(this.renderToolbar(), columnStrip);
+    const headerRow = document.createElement("div");
+    headerRow.className = "excelsior-column-header-row";
+    headerRow.append(corner, columnStrip);
+
+    fragment.append(this.renderToolbar(), headerRow);
     this.chrome.append(fragment);
+  }
+
+  private renderRowHeaders(
+    sheet: ReturnType<WorkbookEngine["getActiveSheet"]>,
+    rowOffsets: number[],
+    rowsToRender: number[],
+    selectionRange: CellRange,
+    activeAddress: CellAddress
+  ): void {
+    const fragment = document.createDocumentFragment();
+    const frozenRows = this.engine.getFrozenPane(sheet.id).rows;
+
+    for (const row of rowsToRender) {
+      if (this.isRowHidden(sheet, row)) {
+        continue;
+      }
+
+      const header = document.createElement("div");
+      header.className = "excelsior-row-header";
+      if (row >= selectionRange.start.row && row <= selectionRange.end.row) {
+        header.classList.add("is-selected");
+      }
+      if (row === activeAddress.row) {
+        header.classList.add("is-active");
+      }
+      if (row < frozenRows) {
+        header.classList.add("is-frozen");
+      }
+      header.dataset.rowHeaderRow = String(row);
+      header.style.top = `${this.getFrozenAdjustedTop(sheet.id, rowOffsets, row) - this.viewport.scrollTop}px`;
+      header.style.height = `${this.getRowHeight(sheet, row)}px`;
+      header.textContent = String(row + 1);
+      fragment.append(header);
+    }
+
+    this.rowHeaders.replaceChildren(fragment);
   }
 
   private getToolbarActionIcon(action: string): string {
@@ -4459,16 +5888,50 @@ export class DomSpreadsheetRenderer {
       "aggregate-max": "MAX",
       "aggregate-count": "#",
       "clear-column-query": "⌫",
+      "clear-format": "◇",
+      "currency-format": "R$",
+      "percentage-format": "%",
+      "number-decrease": ".0←",
+      "number-increase": ".00→",
       bold: "B",
       italic: "I",
+      strike: "S",
       "text-color": "A",
       "border-color": "⊞",
       "fill-color": "▣",
+      "format-painter": "F",
       wrap: "↵",
       "align-left": "≡←",
       "align-center": "≡",
       "align-right": "→≡",
+      "align-top": "↥",
+      "align-middle": "↕",
+      "align-bottom": "↧",
+      "rotate-clockwise": "45°",
+      "rotate-counterclockwise": "-45°",
+      "rotate-none": "0°",
+      "border-all": "▦",
+      "border-top": "▔",
+      "border-right": "▏",
+      "border-bottom": "▁",
+      "border-left": "▕",
+      "border-none": "□",
+      "insert-link": "L",
+      "split-column": "C|C",
+      "export-svg": "SVG",
+      "zoom-in": "+",
+      "zoom-out": "−",
+      "zoom-reset": "100%",
+      "data-validation": "✓",
+      "conditional-formatting": "CF",
+      "find-special": "⌕!",
+      "quick-sum": "Σ",
+      "freeze-rows": "▤",
+      "freeze-columns": "▥",
+      unfreeze: "□",
       merge: "⇆",
+      "merge-horizontal": "⇔",
+      "merge-vertical": "⇕",
       unmerge: "⇅",
       "insert-row": "+R",
       "delete-row": "-R",
@@ -4476,6 +5939,7 @@ export class DomSpreadsheetRenderer {
       "delete-column": "-C",
       "create-pivot": "◫",
       "find-replace": "⌕",
+      "cell-note": "N",
       "add-sheet": "+"
     };
 
@@ -4488,12 +5952,18 @@ export class DomSpreadsheetRenderer {
     const activeAddress = this.getActiveAddress(sheet);
     const activeCell = this.engine.getCell(sheet.id, activeAddress.row, activeAddress.col);
     const remoteRequestModel = this.getRemoteRequestModel(sheet.id);
+    const localQuery = this.engine.getRowModel(sheet.id).kind === "clientSide"
+      ? this.engine.getClientSideQuery(sheet.id)
+      : undefined;
     const pivotSourceRange = this.getPivotSourceRange(sheet);
     const activeRemoteSort = this.getActiveRemoteSortDirection(sheet.id, activeAddress.col);
+    const activeLocalSort = localQuery?.sort.find((item) => item.column === activeAddress.col)?.direction;
     const toggleStates: Partial<Record<string, boolean>> = {
       bold: activeCell?.style?.fontWeight === "bold",
       italic: activeCell?.style?.fontStyle === "italic",
+      underline: activeCell?.style?.underline === true,
       wrap: activeCell?.style?.wrap === true,
+      "format-painter": this.formatPainterStyle !== undefined,
       "group-column": this.isActiveRemoteGrouped(sheet.id, activeAddress.col),
       "pivot-column": this.isActiveRemotePivoted(sheet.id, activeAddress.col),
       "aggregate-sum": this.hasActiveRemoteAggregate(sheet.id, activeAddress.col, "sum"),
@@ -4501,9 +5971,10 @@ export class DomSpreadsheetRenderer {
       "aggregate-min": this.hasActiveRemoteAggregate(sheet.id, activeAddress.col, "min"),
       "aggregate-max": this.hasActiveRemoteAggregate(sheet.id, activeAddress.col, "max"),
       "aggregate-count": this.hasActiveRemoteAggregate(sheet.id, activeAddress.col, "count"),
-      "sort-asc": activeRemoteSort === "asc",
-      "sort-desc": activeRemoteSort === "desc"
+      "sort-asc": (activeRemoteSort ?? activeLocalSort) === "asc",
+      "sort-desc": (activeRemoteSort ?? activeLocalSort) === "desc"
     };
+
     type ToolbarGroupKey = "data" | "font" | "alignment" | "structure";
     const actions: Array<{ action: string; label: string; group: ToolbarGroupKey }> = [
       { action: "undo", label: this.messages.undo, group: "data" },
@@ -4520,17 +5991,55 @@ export class DomSpreadsheetRenderer {
       { action: "clear-column-query", label: this.messages.clearColumnQuery, group: "data" },
       { action: "create-pivot", label: this.messages.createPivot, group: "data" },
       { action: "find-replace", label: this.messages.findReplace, group: "data" },
+      { action: "cell-note", label: this.messages.cellNote, group: "data" },
+      { action: "insert-image", label: "Inserir imagem", group: "structure" },
       { action: "add-sheet", label: this.messages.addSheet, group: "data" },
       { action: "bold", label: this.messages.bold, group: "font" },
       { action: "italic", label: this.messages.italic, group: "font" },
+      { action: "underline", label: this.messages.underline, group: "font" },
+      { action: "strike", label: "Tachado", group: "font" },
+      { action: "clear-format", label: "Limpar formatação", group: "font" },
+      { action: "currency-format", label: "Moeda", group: "font" },
+      { action: "percentage-format", label: "Percentual", group: "font" },
+      { action: "number-decrease", label: "Diminuir casas decimais", group: "font" },
+      { action: "number-increase", label: "Aumentar casas decimais", group: "font" },
       { action: "text-color", label: this.messages.textColor, group: "font" },
       { action: "border-color", label: this.messages.borderColor, group: "font" },
       { action: "fill-color", label: this.messages.fillColor, group: "font" },
+      { action: "format-painter", label: this.messages.formatPainter, group: "font" },
       { action: "wrap", label: this.messages.wrap, group: "alignment" },
+      { action: "overflow", label: `Overflow: ${activeCell?.style?.overflow ?? "clip"}`, group: "alignment" },
       { action: "align-left", label: this.messages.alignLeft, group: "alignment" },
       { action: "align-center", label: this.messages.alignCenter, group: "alignment" },
       { action: "align-right", label: this.messages.alignRight, group: "alignment" },
+      { action: "align-top", label: "Alinhar acima", group: "alignment" },
+      { action: "align-middle", label: "Alinhar ao meio", group: "alignment" },
+      { action: "align-bottom", label: "Alinhar abaixo", group: "alignment" },
+      { action: "rotate-clockwise", label: "Girar texto 45 graus", group: "alignment" },
+      { action: "rotate-counterclockwise", label: "Girar texto -45 graus", group: "alignment" },
+      { action: "rotate-none", label: "Remover rotação", group: "alignment" },
+      { action: "border-all", label: "Todas as bordas", group: "font" },
+      { action: "border-top", label: "Borda superior", group: "font" },
+      { action: "border-right", label: "Borda direita", group: "font" },
+      { action: "border-bottom", label: "Borda inferior", group: "font" },
+      { action: "border-left", label: "Borda esquerda", group: "font" },
+      { action: "border-none", label: "Remover bordas", group: "font" },
+      { action: "insert-link", label: "Inserir link", group: "data" },
+      { action: "split-column", label: "Dividir coluna", group: "data" },
+      { action: "export-svg", label: "Capturar planilha em SVG", group: "data" },
+      { action: "zoom-out", label: "Diminuir zoom da planilha", group: "data" },
+      { action: "zoom-reset", label: `Zoom ${Math.round(this.sheetZoom * 100)}%`, group: "data" },
+      { action: "zoom-in", label: "Aumentar zoom da planilha", group: "data" },
+      { action: "data-validation", label: "Validação de dados", group: "data" },
+      { action: "conditional-formatting", label: "Formatação condicional", group: "font" },
+      { action: "find-special", label: "Localizar células especiais", group: "data" },
+      { action: "quick-sum", label: "AutoSoma", group: "data" },
+      { action: "freeze-rows", label: "Congelar linhas até a célula", group: "structure" },
+      { action: "freeze-columns", label: "Congelar colunas até a célula", group: "structure" },
+      { action: "unfreeze", label: "Descongelar painéis", group: "structure" },
       { action: "merge", label: this.messages.merge, group: "alignment" },
+      { action: "merge-horizontal", label: "Mesclar horizontalmente", group: "alignment" },
+      { action: "merge-vertical", label: "Mesclar verticalmente", group: "alignment" },
       { action: "unmerge", label: this.messages.unmerge, group: "alignment" },
       { action: "insert-row", label: this.messages.insertRow, group: "structure" },
       { action: "delete-row", label: this.messages.deleteRow, group: "structure" },
@@ -4538,8 +6047,6 @@ export class DomSpreadsheetRenderer {
       { action: "delete-column", label: this.messages.deleteColumn, group: "structure" }
     ];
     const remoteOnlyActions = new Set([
-      "sort-asc",
-      "sort-desc",
       "group-column",
       "pivot-column",
       "aggregate-sum",
@@ -4547,8 +6054,8 @@ export class DomSpreadsheetRenderer {
       "aggregate-min",
       "aggregate-max",
       "aggregate-count",
-      "clear-column-query"
     ]);
+
     const groupOrder: Array<{ key: ToolbarGroupKey; label: string }> = [
       { key: "data", label: this.messages.toolbarDataGroup },
       { key: "font", label: this.messages.toolbarFontGroup },
@@ -4590,6 +6097,80 @@ export class DomSpreadsheetRenderer {
       filterInput.setAttribute("aria-label", `${this.messages.filterColumn} ${this.getRemoteRequestField(activeAddress.col)}`);
       filterField.append(filterLabel, filterInput);
       groupControls.get("data")?.append(filterField);
+    } else if (this.engine.getRowModel(sheet.id).kind === "clientSide") {
+      const activeFilter = localQuery?.filters.find((item) => item.column === activeAddress.col);
+      const filterField = document.createElement("div");
+      filterField.className = "excelsior-toolbar-filter is-inline";
+      filterField.dataset.localFilterPanel = "true";
+      const typeSelect = document.createElement("select");
+      typeSelect.dataset.localFilterType = "true";
+      typeSelect.setAttribute("aria-label", "Tipo do filtro local");
+      for (const item of [
+        { value: "text", label: "Texto" },
+        { value: "number", label: "Número" },
+        { value: "date", label: "Data" }
+      ] as const) {
+        typeSelect.add(new Option(item.label, item.value, false, activeFilter?.type === item.value));
+      }
+      const operatorSelect = document.createElement("select");
+      operatorSelect.dataset.localFilterOperator = "true";
+      operatorSelect.setAttribute("aria-label", "Operador do filtro local");
+      const operatorItems = [
+        { value: "equals", label: "Igual a" },
+        { value: "contains", label: "Contém" },
+        { value: "startsWith", label: "Começa com" },
+        { value: "gt", label: "Maior que" },
+        { value: "gte", label: "Maior ou igual" },
+        { value: "lt", label: "Menor que" },
+        { value: "lte", label: "Menor ou igual" },
+        { value: "between", label: "Entre" }
+      ] as const;
+      const syncOperatorOptions = () => {
+        const previousOperator = operatorSelect.value || activeFilter?.operator;
+        const allowedOperators = typeSelect.value === "text"
+          ? operatorItems.filter((item) => ["equals", "contains", "startsWith"].includes(item.value))
+          : operatorItems.filter((item) => !["contains", "startsWith"].includes(item.value));
+        operatorSelect.replaceChildren(...allowedOperators.map((item) => new Option(item.label, item.value)));
+        operatorSelect.value = allowedOperators.some((item) => item.value === previousOperator)
+          ? previousOperator ?? "equals"
+          : "equals";
+      };
+      syncOperatorOptions();
+      const valueInput = document.createElement("input");
+      valueInput.dataset.localFilterValue = "true";
+      valueInput.className = "excelsior-toolbar-input";
+      valueInput.inputMode = typeSelect.value === "number" ? "decimal" : "text";
+      valueInput.placeholder = `${this.messages.filterColumn} ${this.getRemoteRequestField(activeAddress.col)}`;
+      valueInput.value = activeFilter === undefined ? "" : String(activeFilter.value);
+      const valueToInput = document.createElement("input");
+      valueToInput.dataset.localFilterValueTo = "true";
+      valueToInput.className = "excelsior-toolbar-input";
+      valueToInput.placeholder = "Até";
+      valueToInput.value = activeFilter?.valueTo === undefined ? "" : String(activeFilter.valueTo);
+      const syncValueToState = () => {
+        valueToInput.disabled = operatorSelect.value !== "between";
+        valueToInput.inputMode = typeSelect.value === "number" ? "decimal" : "text";
+        valueToInput.setAttribute("aria-label", valueToInput.disabled ? "Valor final disponível para o operador Entre" : "Valor final do intervalo");
+      };
+      operatorSelect.addEventListener("change", syncValueToState);
+      typeSelect.addEventListener("change", () => {
+        syncOperatorOptions();
+        valueInput.inputMode = typeSelect.value === "number" ? "decimal" : "text";
+        syncValueToState();
+      });
+      syncValueToState();
+      const applyButton = document.createElement("button");
+      applyButton.type = "button";
+      applyButton.className = "excelsior-toolbar-button";
+      applyButton.dataset.action = "apply-local-filter";
+      applyButton.textContent = "Aplicar filtro";
+      const clearButton = document.createElement("button");
+      clearButton.type = "button";
+      clearButton.className = "excelsior-toolbar-button";
+      clearButton.dataset.action = "clear-local-filters";
+      clearButton.textContent = "Zerar filtros";
+      filterField.append(typeSelect, operatorSelect, valueInput, valueToInput, applyButton, clearButton);
+      groupControls.get("data")?.append(filterField);
     }
 
     for (const item of actions) {
@@ -4612,6 +6193,32 @@ export class DomSpreadsheetRenderer {
       }
       groupControls.get(item.group)?.append(button);
     }
+
+    const fontFamilySelect = document.createElement("select");
+    fontFamilySelect.dataset.fontFamily = "true";
+    fontFamilySelect.setAttribute("aria-label", this.messages.fontFamily);
+    for (const family of ["Arial", "Calibri", "Georgia", "Tahoma", "Verdana", "Courier New"]) {
+      fontFamilySelect.add(new Option(family, family, false, (activeCell?.style?.fontFamily ?? "Arial") === family));
+    }
+    const fontSizeSelect = document.createElement("select");
+    fontSizeSelect.dataset.fontSize = "true";
+    fontSizeSelect.setAttribute("aria-label", this.messages.fontSize);
+    for (const size of [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32]) {
+      fontSizeSelect.add(new Option(String(size), String(size), false, (activeCell?.style?.fontSize ?? 12) === size));
+    }
+    const formatSelect = document.createElement("select");
+    formatSelect.dataset.numberFormat = "true";
+    formatSelect.setAttribute("aria-label", "Formato da célula");
+    for (const item of [
+      { label: "Geral", value: "General" },
+      { label: "Número", value: "#,##0.00" },
+      { label: "Moeda", value: "R$ #,##0.00" },
+      { label: "Percentual", value: "0.00%" },
+      { label: "Data", value: "dd/mm/yyyy" }
+    ]) {
+      formatSelect.add(new Option(item.label, item.value, false, (activeCell?.style?.format ?? "General") === item.value));
+    }
+    groupControls.get("font")?.prepend(formatSelect, fontFamilySelect, fontSizeSelect);
 
     this.toolbar.append(ribbon);
     return this.toolbar;
@@ -4668,6 +6275,13 @@ export class DomSpreadsheetRenderer {
     const viewportHeight = this.viewport.clientHeight || this.container.clientHeight || 480;
     const rowOffsets = buildOffsets(resolvedRowCount, (index) => this.getRowHeight(sheet, index));
     const colOffsets = buildOffsets(sheet.columnCount, (index) => this.getColumnWidth(sheet, index));
+    this.visualObjectSurfaceMetrics = {
+      sheetId: sheet.id,
+      rowOffsets,
+      colOffsets,
+      rowCount: resolvedRowCount,
+      colCount: sheet.columnCount
+    };
     const visibleRows = findVisibleBounds(
       rowOffsets,
       this.viewport.scrollTop,
@@ -4704,6 +6318,9 @@ export class DomSpreadsheetRenderer {
     const selectionRange = this.getResolvedSelectionRange(sheet);
     const autofillPreview = this.autofillDrag?.preview?.fillRange;
     const activeFindMatch = this.getActiveFindReplaceMatch();
+    const remotePresences = this.engine
+      .getPresences()
+      .filter((presence) => presence.clientId !== this.localPresenceClientId);
     const findMatchKeys = new Set(
       this.findReplaceState.matches
         .filter((match) => match.sheetId === sheet.id)
@@ -4717,9 +6334,11 @@ export class DomSpreadsheetRenderer {
       activeAddress.col,
       isWithinRange(activeAddress.row, activeAddress.col, selectionRange)
     );
-    this.renderChrome();
+    this.renderChrome(columnsToRender);
     this.renderFormulaBar();
     this.renderSheetTabs();
+    this.renderRowHeaders(sheet, rowOffsets, rowsToRender, selectionRange, activeAddress);
+    this.renderSplitPanes(sheet, rowOffsets, colOffsets);
 
     const fragment = document.createDocumentFragment();
 
@@ -4799,7 +6418,7 @@ export class DomSpreadsheetRenderer {
         cell.setAttribute("aria-rowindex", String(cellRange.start.row + 1));
         cell.setAttribute("aria-colindex", String(cellRange.start.col + 1));
         cell.setAttribute("aria-selected", String(rangesOverlap(cellRange, sheet.selection)));
-        if (cellRange.start.col < Math.min(sheet.columnCount, 12)) {
+        if (this.renderedHeaderColumns.has(cellRange.start.col)) {
           cell.setAttribute("aria-describedby", this.getColumnHeaderElementId(sheet.id, cellRange.start.col));
         }
         cell.setAttribute(
@@ -4816,11 +6435,53 @@ export class DomSpreadsheetRenderer {
           cell.setAttribute("aria-colspan", String(cellRange.end.col - cellRange.start.col + 1));
         }
         cell.style.top = `${this.getFrozenAdjustedTop(sheet.id, rowOffsets, cellRange.start.row)}px`;
-        cell.style.left = `${this.getFrozenAdjustedLeft(sheet.id, colOffsets, cellRange.start.col)}px`;
+        cell.style.left = `${ROW_HEADER_WIDTH + this.getFrozenAdjustedLeft(sheet.id, colOffsets, cellRange.start.col)}px`;
         cell.style.width = `${getSpanSize(colOffsets, cellRange.start.col, cellRange.end.col)}px`;
         cell.style.height = `${getSpanSize(rowOffsets, cellRange.start.row, cellRange.end.row)}px`;
-        this.applyCellPresentation(cell, this.getCellStyle(sheet, cellRange.start.row, cellRange.start.col));
+        const cellStyle = this.getCellStyle(sheet, cellRange.start.row, cellRange.start.col);
+        this.applyCellPresentation(cell, cellStyle);
         this.renderCellContent(cell, sheet.id, cellRange.start.row, cellRange.start.col, rowModelRowsByIndex.get(cellRange.start.row));
+        const content = cell.querySelector<HTMLElement>(".excelsior-cell-content");
+        if (content && cellStyle?.rotation) {
+          content.style.transform = `rotate(${cellStyle.rotation}deg)`;
+        }
+
+        for (const presence of remotePresences) {
+          const color = getPresenceColor(presence);
+          if (presence.selection?.sheetId === sheet.id && rangesOverlap(cellRange, presence.selection.range)) {
+            const remoteSelection = document.createElement("span");
+            remoteSelection.className = "excelsior-remote-selection";
+            remoteSelection.dataset.remoteSelection = presence.clientId;
+            remoteSelection.setAttribute("aria-hidden", "true");
+            remoteSelection.style.setProperty("--excelsior-presence-color", color);
+            cell.append(remoteSelection);
+          }
+          if (
+            presence.cursor?.sheetId === sheet.id &&
+            isWithinRange(presence.cursor.row, presence.cursor.col, cellRange)
+          ) {
+            const remoteCursor = document.createElement("span");
+            const name = getPresenceName(presence);
+            remoteCursor.className = "excelsior-remote-cursor";
+            remoteCursor.dataset.remoteCursor = presence.clientId;
+            remoteCursor.textContent = name;
+            remoteCursor.setAttribute("role", "note");
+            remoteCursor.setAttribute("aria-label", `Cursor remoto de ${name}`);
+            remoteCursor.style.setProperty("--excelsior-presence-color", color);
+            cell.append(remoteCursor);
+          }
+        }
+
+        if (model?.note || model?.comments?.length) {
+          cell.classList.add("has-note");
+          const noteIndicator = document.createElement("button");
+          noteIndicator.type = "button";
+          noteIndicator.className = "excelsior-cell-note-indicator";
+          noteIndicator.dataset.cellNote = "true";
+          noteIndicator.setAttribute("aria-label", this.messages.cellNoteIndicator);
+          noteIndicator.title = model.note ?? `${model?.comments?.length ?? 0} comentário(s)`;
+          cell.append(noteIndicator);
+        }
 
         if (
           this.isAutofillEnabled() &&
@@ -4840,10 +6501,522 @@ export class DomSpreadsheetRenderer {
     }
 
     this.cellsLayer.replaceChildren(fragment);
+    this.renderVisualObjects(sheet, rowOffsets, colOffsets);
 
     if (this.editingCell) {
       this.positionEditor(this.editingCell.row, this.editingCell.col);
     }
+  };
+
+  private resolveVisualObjectRect(
+    position: WorksheetObjectPosition,
+    rowOffsets: number[],
+    colOffsets: number[],
+    rowCount: number,
+    colCount: number
+  ): VisualObjectRect {
+    const anchor = cellLabelToAddress(position.fromCell);
+    const row = clampNumeric(anchor.row, 0, Math.max(0, rowCount - 1));
+    const col = clampNumeric(anchor.col, 0, Math.max(0, colCount - 1));
+    return {
+      left: ROW_HEADER_WIDTH + (colOffsets[col] ?? 0) + position.offsetX,
+      top: (rowOffsets[row] ?? 0) + position.offsetY,
+      width: position.width,
+      height: position.height
+    };
+  }
+
+  private resolveWorksheetObjectPositionFromRect(
+    rect: VisualObjectRect,
+    metrics: VisualObjectSurfaceMetrics,
+    previous: WorksheetObjectPosition
+  ): WorksheetObjectPosition {
+    const findAnchorIndex = (offsets: number[], coordinate: number, count: number): number => {
+      let index = 0;
+      while (index + 1 < count && (offsets[index + 1] ?? Number.POSITIVE_INFINITY) <= coordinate) {
+        index += 1;
+      }
+      return clampNumeric(index, 0, Math.max(0, count - 1));
+    };
+    const relativeLeft = Math.max(0, rect.left - ROW_HEADER_WIDTH);
+    const relativeTop = Math.max(0, rect.top);
+    const fromCol = findAnchorIndex(metrics.colOffsets, relativeLeft, metrics.colCount);
+    const fromRow = findAnchorIndex(metrics.rowOffsets, relativeTop, metrics.rowCount);
+    const toCol = findAnchorIndex(metrics.colOffsets, relativeLeft + rect.width, metrics.colCount);
+    const toRow = findAnchorIndex(metrics.rowOffsets, relativeTop + rect.height, metrics.rowCount);
+    return {
+      fromCell: cellAddressToLabel({ row: fromRow, col: fromCol }),
+      toCell: cellAddressToLabel({ row: toRow, col: toCol }),
+      offsetX: relativeLeft - (metrics.colOffsets[fromCol] ?? 0),
+      offsetY: relativeTop - (metrics.rowOffsets[fromRow] ?? 0),
+      width: rect.width,
+      height: rect.height,
+      zIndex: previous.zIndex
+    };
+  }
+
+  private renderVisualObjects(
+    sheet: SheetModel,
+    rowOffsets: number[],
+    colOffsets: number[]
+  ): void {
+    const fragment = document.createDocumentFragment();
+    const imageIds = new Set<string>();
+    for (const image of this.engine.getImages(sheet.id).filter((item) => item.state.visible !== false)) {
+      imageIds.add(image.id);
+      const rect = this.resolveVisualObjectRect(image.position, rowOffsets, colOffsets, sheet.rowCount, sheet.columnCount);
+      const object = this.imageObjectElementById.get(image.id) ?? this.createImageObjectElement(image);
+      object.style.left = `${rect.left}px`;
+      object.style.top = `${rect.top}px`;
+      object.style.width = `${rect.width}px`;
+      object.style.height = `${rect.height}px`;
+      object.style.zIndex = String(image.position.zIndex);
+      object.classList.toggle("is-selected", image.state.selected);
+      object.classList.toggle("is-locked", image.state.locked);
+      object.setAttribute("aria-selected", String(image.state.selected));
+      const picture = object.querySelector<HTMLImageElement>("[data-image-content='true']");
+      if (picture) {
+        picture.src = image.src;
+        picture.alt = image.alt;
+        picture.style.objectFit = image.style?.objectFit ?? "contain";
+        picture.style.opacity = String(image.style?.opacity ?? 1);
+      }
+      fragment.append(object);
+    }
+    for (const [imageId, object] of this.imageObjectElementById) {
+      if (!imageIds.has(imageId)) {
+        object.remove();
+        this.imageObjectElementById.delete(imageId);
+      }
+    }
+
+    const widgetIds = new Set<string>();
+    for (const widget of this.engine.getWidgets(sheet.id).filter((item) => item.state.visible !== false)) {
+      widgetIds.add(widget.id);
+      const rect = this.resolveVisualObjectRect(widget.position, rowOffsets, colOffsets, sheet.rowCount, sheet.columnCount);
+      const object = this.widgetObjectElementById.get(widget.id) ?? this.createWidgetObjectElement(widget);
+      object.style.left = `${rect.left}px`;
+      object.style.top = `${rect.top}px`;
+      object.style.width = `${rect.width}px`;
+      object.style.height = `${rect.height}px`;
+      object.style.zIndex = String(widget.position.zIndex);
+      object.classList.toggle("is-selected", widget.state.selected);
+      object.classList.toggle("is-locked", widget.state.locked);
+      object.setAttribute("aria-selected", String(widget.state.selected));
+      this.renderWidgetObject(widget);
+      fragment.append(object);
+    }
+    for (const [widgetId, object] of this.widgetObjectElementById) {
+      if (!widgetIds.has(widgetId)) {
+        this.destroyWidgetRuntime(widgetId);
+        object.remove();
+        this.widgetObjectElementById.delete(widgetId);
+        this.widgetBodyElementById.delete(widgetId);
+      }
+    }
+    this.visualObjectsLayer.replaceChildren(fragment);
+  }
+
+  private createImageObjectElement(image: WorksheetImageObject): HTMLElement {
+    const object = document.createElement("section");
+    object.className = "excelsior-visual-object excelsior-image-object";
+    object.dataset.imageId = image.id;
+    object.tabIndex = 0;
+    object.setAttribute("role", "group");
+    object.setAttribute("aria-label", image.alt || "Imagem");
+    const header = document.createElement("header");
+    header.className = "excelsior-visual-object-header";
+    header.dataset.imageMove = "true";
+    const title = document.createElement("div");
+    title.className = "excelsior-visual-object-title";
+    title.textContent = image.alt || "Imagem";
+    const actions = document.createElement("div");
+    actions.className = "excelsior-visual-object-actions";
+    actions.append(
+      this.createVisualObjectAction("image", "back", "Enviar imagem para trás", "↓"),
+      this.createVisualObjectAction("image", "front", "Trazer imagem para frente", "↑"),
+      this.createVisualObjectAction("image", "lock", "Bloquear ou desbloquear imagem", "L"),
+      this.createVisualObjectAction("image", "delete", "Excluir imagem", "×", true)
+    );
+    header.append(title, actions);
+    const body = document.createElement("div");
+    body.className = "excelsior-visual-object-body";
+    const picture = document.createElement("img");
+    picture.dataset.imageContent = "true";
+    picture.draggable = false;
+    body.append(picture);
+    const resize = document.createElement("button");
+    resize.type = "button";
+    resize.className = "excelsior-visual-object-resize";
+    resize.dataset.imageResize = "true";
+    resize.setAttribute("aria-label", "Redimensionar imagem");
+    object.append(header, body, resize);
+    this.imageObjectElementById.set(image.id, object);
+    return object;
+  }
+
+  private createVisualObjectAction(
+    kind: "image" | "widget",
+    action: string,
+    label: string,
+    text: string,
+    destructive = false
+  ): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = destructive ? "excelsior-visual-object-delete" : "excelsior-visual-object-action";
+    button.dataset[`${kind}Action`] = action;
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.textContent = text;
+    return button;
+  }
+
+  private createWidgetObjectElement(widget: WorksheetWidgetObject): HTMLElement {
+    const object = document.createElement("section");
+    object.className = "excelsior-visual-object excelsior-widget-object";
+    object.dataset.widgetId = widget.id;
+    object.tabIndex = 0;
+    object.setAttribute("role", "group");
+    object.setAttribute("aria-label", widget.label);
+    const header = document.createElement("header");
+    header.className = "excelsior-visual-object-header";
+    header.dataset.widgetMove = "true";
+    const title = document.createElement("div");
+    title.className = "excelsior-visual-object-title";
+    title.textContent = widget.label;
+    const actions = document.createElement("div");
+    actions.className = "excelsior-visual-object-actions";
+    actions.append(
+      this.createVisualObjectAction("widget", "back", `Enviar ${widget.label} para trás`, "↓"),
+      this.createVisualObjectAction("widget", "front", `Trazer ${widget.label} para frente`, "↑"),
+      this.createVisualObjectAction("widget", "lock", `Bloquear ou desbloquear ${widget.label}`, "L"),
+      this.createVisualObjectAction("widget", "delete", `Excluir ${widget.label}`, "×", true)
+    );
+    header.append(title, actions);
+    const body = document.createElement("div");
+    body.className = "excelsior-visual-object-body excelsior-widget-object-body";
+    body.dataset.widgetBody = "true";
+    const resize = document.createElement("button");
+    resize.type = "button";
+    resize.className = "excelsior-visual-object-resize";
+    resize.dataset.widgetResize = "true";
+    resize.setAttribute("aria-label", `Redimensionar ${widget.label}`);
+    object.append(header, body, resize);
+    this.widgetObjectElementById.set(widget.id, object);
+    this.widgetBodyElementById.set(widget.id, body);
+    return object;
+  }
+
+  private renderWidgetObject(widget: WorksheetWidgetObject): void {
+    const body = this.widgetBodyElementById.get(widget.id);
+    if (!body) return;
+    const signature = JSON.stringify({ type: widget.type, label: widget.label, config: widget.config, data: widget.data });
+    if (this.widgetRenderSignatureById.get(widget.id) === signature) return;
+    this.destroyWidgetRuntime(widget.id);
+    body.replaceChildren();
+    const renderer = this.options.widgetRenderers?.[widget.type];
+    if (!renderer) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "excelsior-widget-placeholder";
+      placeholder.textContent = `Widget não registrado: ${widget.type}`;
+      body.append(placeholder);
+      this.widgetRenderSignatureById.set(widget.id, signature);
+      return;
+    }
+    try {
+      const cleanup = renderer({ host: body, widget });
+      if (typeof cleanup === "function") this.widgetCleanupById.set(widget.id, cleanup);
+      this.widgetRenderSignatureById.set(widget.id, signature);
+    } catch {
+      body.replaceChildren();
+      const placeholder = document.createElement("div");
+      placeholder.className = "excelsior-widget-placeholder";
+      placeholder.textContent = `Falha ao renderizar widget: ${widget.type}`;
+      body.append(placeholder);
+    }
+  }
+
+  private destroyWidgetRuntime(widgetId: string): void {
+    try {
+      this.widgetCleanupById.get(widgetId)?.();
+    } catch {
+      // Best-effort cleanup for opt-in renderer code.
+    }
+    this.widgetCleanupById.delete(widgetId);
+    this.widgetRenderSignatureById.delete(widgetId);
+  }
+
+  private destroyAllWidgetRuntimes(): void {
+    for (const widgetId of this.widgetCleanupById.keys()) {
+      this.destroyWidgetRuntime(widgetId);
+    }
+    this.widgetObjectElementById.clear();
+    this.widgetBodyElementById.clear();
+  }
+
+  private readonly handleVisualObjectLayerMouseDown = (event: MouseEvent): void => {
+    if (event.button !== 0) {
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    const objectElement = target?.closest<HTMLElement>("[data-image-id], [data-widget-id]");
+    if (!objectElement) {
+      return;
+    }
+
+    const sheet = this.engine.getActiveSheet();
+    const kind: VisualObjectInteractionState["kind"] = objectElement.dataset.imageId ? "image" : "widget";
+    const objectId = objectElement.dataset.imageId ?? objectElement.dataset.widgetId;
+    if (!objectId) {
+      return;
+    }
+
+    if (target?.closest("[data-image-action], [data-widget-action]")) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    const visualObject = this.getVisualObject(kind, sheet.id, objectId);
+    if (!visualObject || visualObject.state.locked) {
+      return;
+    }
+    const metrics = this.visualObjectSurfaceMetrics;
+    if (!metrics || metrics.sheetId !== sheet.id) {
+      return;
+    }
+
+    const resizeHandle = target?.closest("[data-image-resize='true'], [data-widget-resize='true']");
+    const moveHandle = target?.closest("[data-image-move='true'], [data-widget-move='true']");
+    if (!resizeHandle && !moveHandle) {
+      return;
+    }
+
+    const mode: VisualObjectInteractionState["mode"] = resizeHandle ? "resize" : "move";
+    const originRect = this.resolveVisualObjectRect(visualObject.position, metrics.rowOffsets, metrics.colOffsets, metrics.rowCount, metrics.colCount);
+    this.visualObjectInteraction = {
+      mode,
+      kind,
+      sheetId: sheet.id,
+      objectId,
+      pointerStartX: event.clientX,
+      pointerStartY: event.clientY,
+      originRect,
+      liveRect: { ...originRect }
+    };
+    if (kind === "image") {
+      this.engine.selectImage(sheet.id, objectId);
+    } else {
+      this.engine.selectWidget(sheet.id, objectId);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.render();
+    this.focus();
+  };
+
+  private readonly handleVisualObjectLayerClick = (event: Event): void => {
+    const target = event.target as HTMLElement | null;
+    const imageElement = target?.closest<HTMLElement>("[data-image-id]");
+    if (imageElement) {
+      const imageId = imageElement.dataset.imageId;
+      const sheetId = this.engine.getActiveSheet().id;
+      const action = target?.closest<HTMLElement>("[data-image-action]")?.dataset.imageAction;
+      const image = imageId ? this.engine.getImage(sheetId, imageId) : undefined;
+      if (imageId && image) {
+        if (action === "delete") this.engine.deleteImage(sheetId, imageId);
+        else if (action === "lock") this.engine.updateImage({ sheetId, imageId, state: { locked: !image.state.locked } });
+        else if (action === "back") this.engine.updateImage({ sheetId, imageId, position: { zIndex: Math.max(0, image.position.zIndex - 1) } });
+        else if (action === "front") this.engine.updateImage({ sheetId, imageId, position: { zIndex: image.position.zIndex + 1 } });
+        else this.engine.selectImage(sheetId, imageId);
+        this.requestRender();
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+    const widgetElement = target?.closest<HTMLElement>("[data-widget-id]");
+    if (widgetElement) {
+      const widgetId = widgetElement.dataset.widgetId;
+      const sheetId = this.engine.getActiveSheet().id;
+      const action = target?.closest<HTMLElement>("[data-widget-action]")?.dataset.widgetAction;
+      const widget = widgetId ? this.engine.getWidget(sheetId, widgetId) : undefined;
+      if (widgetId && widget) {
+        if (action === "delete") this.engine.deleteWidget(sheetId, widgetId);
+        else if (action === "lock") this.engine.updateWidget({ sheetId, widgetId, state: { locked: !widget.state.locked } });
+        else if (action === "back") this.engine.updateWidget({ sheetId, widgetId, position: { zIndex: Math.max(0, widget.position.zIndex - 1) } });
+        else if (action === "front") this.engine.updateWidget({ sheetId, widgetId, position: { zIndex: widget.position.zIndex + 1 } });
+        else this.engine.selectWidget(sheetId, widgetId);
+        this.requestRender();
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+  };
+
+  private getVisualObject(kind: VisualObjectInteractionState["kind"], sheetId: string, objectId: string): WorksheetImageObject | WorksheetWidgetObject | undefined {
+    if (kind === "image") return this.engine.getImage(sheetId, objectId);
+    return this.engine.getWidget(sheetId, objectId);
+  }
+
+  private commitVisualObjectGeometry(
+    kind: VisualObjectInteractionState["kind"],
+    sheetId: string,
+    objectId: string,
+    mode: VisualObjectInteractionState["mode"],
+    rect: VisualObjectRect
+  ): void {
+    const metrics = this.visualObjectSurfaceMetrics;
+    const visualObject = this.getVisualObject(kind, sheetId, objectId);
+    if (!metrics || metrics.sheetId !== sheetId || !visualObject) return;
+    const position = this.resolveWorksheetObjectPositionFromRect(rect, metrics, visualObject.position);
+    if (mode === "move") {
+      const next = {
+        fromCell: position.fromCell,
+        toCell: position.toCell,
+        offsetX: position.offsetX,
+        offsetY: position.offsetY,
+        zIndex: position.zIndex
+      };
+      if (kind === "image") this.engine.moveImage({ sheetId, imageId: objectId, position: next });
+      else this.engine.moveWidget({ sheetId, widgetId: objectId, position: next });
+      return;
+    }
+    const next = { width: position.width, height: position.height, toCell: position.toCell };
+    if (kind === "image") this.engine.resizeImage({ sheetId, imageId: objectId, position: next });
+    else this.engine.resizeWidget({ sheetId, widgetId: objectId, position: next });
+  }
+
+  private readonly handleVisualObjectKeyDown = (event: KeyboardEvent): void => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("[data-image-action], [data-widget-action]")) return;
+    const element = target?.closest<HTMLElement>("[data-image-id], [data-widget-id]");
+    if (!element) return;
+    const kind: VisualObjectInteractionState["kind"] = element.dataset.imageId ? "image" : "widget";
+    const objectId = element.dataset.imageId ?? element.dataset.widgetId;
+    const sheetId = this.engine.getActiveSheet().id;
+    const visualObject = objectId ? this.getVisualObject(kind, sheetId, objectId) : undefined;
+    if (!objectId || !visualObject) return;
+
+    if (event.key.toLowerCase() === "l") {
+      if (kind === "image") this.engine.updateImage({ sheetId, imageId: objectId, state: { locked: !visualObject.state.locked } });
+      else this.engine.updateWidget({ sheetId, widgetId: objectId, state: { locked: !visualObject.state.locked } });
+    } else if (event.key === "Delete" || event.key === "Backspace") {
+      if (kind === "image") this.engine.deleteImage(sheetId, objectId);
+      else this.engine.deleteWidget(sheetId, objectId);
+    } else if (event.key === "PageUp" || event.key === "PageDown") {
+      const zIndex = Math.max(0, visualObject.position.zIndex + (event.key === "PageUp" ? 1 : -1));
+      if (kind === "image") this.engine.updateImage({ sheetId, imageId: objectId, position: { zIndex } });
+      else this.engine.updateWidget({ sheetId, widgetId: objectId, position: { zIndex } });
+    } else if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+      if (visualObject.state.locked || !this.visualObjectSurfaceMetrics) return;
+      const delta = event.ctrlKey ? 1 : 10;
+      const rect = this.resolveVisualObjectRect(
+        visualObject.position,
+        this.visualObjectSurfaceMetrics.rowOffsets,
+        this.visualObjectSurfaceMetrics.colOffsets,
+        this.visualObjectSurfaceMetrics.rowCount,
+        this.visualObjectSurfaceMetrics.colCount
+      );
+      const horizontal = event.key === "ArrowLeft" ? -delta : event.key === "ArrowRight" ? delta : 0;
+      const vertical = event.key === "ArrowUp" ? -delta : event.key === "ArrowDown" ? delta : 0;
+      if (event.shiftKey) {
+        rect.width = Math.max(VISUAL_OBJECT_MIN_WIDTH, rect.width + horizontal);
+        rect.height = Math.max(VISUAL_OBJECT_MIN_HEIGHT, rect.height + vertical);
+      } else {
+        rect.left += horizontal;
+        rect.top += vertical;
+      }
+      this.commitVisualObjectGeometry(kind, sheetId, objectId, event.shiftKey ? "resize" : "move", rect);
+    } else {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.requestRender();
+  };
+
+  private readonly handleVisualObjectInteractionMouseMove = (event: MouseEvent): void => {
+    const interaction = this.visualObjectInteraction;
+    if (!interaction) {
+      return;
+    }
+    const throttleMs = 16;
+    const now = Date.now();
+    if (throttleMs > 0 && now - this.visualObjectLastInteractionMoveTs < throttleMs) {
+      event.preventDefault();
+      return;
+    }
+    this.visualObjectLastInteractionMoveTs = now;
+    const metrics = this.visualObjectSurfaceMetrics;
+    if (!metrics || metrics.sheetId !== interaction.sheetId) {
+      return;
+    }
+
+    const deltaX = event.clientX - interaction.pointerStartX;
+    const deltaY = event.clientY - interaction.pointerStartY;
+    const maxSurfaceWidth = metrics.colOffsets[metrics.colOffsets.length - 1] ?? 0;
+    const maxSurfaceHeight = metrics.rowOffsets[metrics.rowOffsets.length - 1] ?? 0;
+    const nextRect: VisualObjectRect = {
+      ...interaction.originRect
+    };
+
+    if (interaction.mode === "move") {
+      nextRect.left = clampNumeric(
+        interaction.originRect.left + deltaX,
+        ROW_HEADER_WIDTH,
+        Math.max(ROW_HEADER_WIDTH, ROW_HEADER_WIDTH + maxSurfaceWidth - interaction.originRect.width)
+      );
+      nextRect.top = clampNumeric(
+        interaction.originRect.top + deltaY,
+        0,
+        Math.max(0, maxSurfaceHeight - interaction.originRect.height)
+      );
+    } else {
+      nextRect.width = clampNumeric(
+        interaction.originRect.width + deltaX,
+        VISUAL_OBJECT_MIN_WIDTH,
+        Math.max(VISUAL_OBJECT_MIN_WIDTH, ROW_HEADER_WIDTH + maxSurfaceWidth - interaction.originRect.left)
+      );
+      nextRect.height = clampNumeric(
+        interaction.originRect.height + deltaY,
+        VISUAL_OBJECT_MIN_HEIGHT,
+        Math.max(VISUAL_OBJECT_MIN_HEIGHT, maxSurfaceHeight - interaction.originRect.top)
+      );
+    }
+
+    interaction.liveRect = nextRect;
+    this.visualObjectInteraction = interaction;
+    const selector = interaction.kind === "image"
+      ? `[data-image-id='${interaction.objectId}']`
+      : `[data-widget-id='${interaction.objectId}']`;
+    const objectElement = this.visualObjectsLayer.querySelector<HTMLElement>(selector);
+    if (objectElement) {
+      objectElement.style.left = `${nextRect.left}px`;
+      objectElement.style.top = `${nextRect.top}px`;
+      objectElement.style.width = `${nextRect.width}px`;
+      objectElement.style.height = `${nextRect.height}px`;
+    }
+    event.preventDefault();
+  };
+
+  private readonly handleVisualObjectInteractionMouseUp = (): void => {
+    const interaction = this.visualObjectInteraction;
+    if (!interaction) {
+      return;
+    }
+    this.visualObjectLastInteractionMoveTs = 0;
+    this.visualObjectInteraction = undefined;
+    const metrics = this.visualObjectSurfaceMetrics;
+    if (!this.getVisualObject(interaction.kind, interaction.sheetId, interaction.objectId) || !metrics || metrics.sheetId !== interaction.sheetId) {
+      this.requestRender();
+      return;
+    }
+
+    this.commitVisualObjectGeometry(interaction.kind, interaction.sheetId, interaction.objectId, interaction.mode, interaction.liveRect);
+    this.requestRender();
   };
 
   private getVisibleRemoteGroup(rowModelRow: RowModelRow | undefined, col: number): RowModelRow["group"] | undefined {

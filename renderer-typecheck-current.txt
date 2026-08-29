@@ -1,0 +1,629 @@
+
+> excelsior@0.1.0 typecheck
+> tsc --noEmit -p tsconfig.json
+
+packages/core/tests/workbook-engine.spec.ts(440,19): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(469,19): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1236,15): error TS2345: Argument of type '"chart:created"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1236,35): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1236,44): error TS2339: Property 'sheetId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1237,15): error TS2345: Argument of type '"chart:moved"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1237,33): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1237,42): error TS2339: Property 'position' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1238,15): error TS2345: Argument of type '"chart:resized"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1238,35): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1238,44): error TS2339: Property 'position' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1241,15): error TS2345: Argument of type '"chart:deleted"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1241,35): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1242,15): error TS2345: Argument of type '"chart:selected"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1242,36): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1243,15): error TS2345: Argument of type '"chart:unselected"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1243,38): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1245,37): error TS2339: Property 'createChart' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1283,33): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1291,12): error TS2339: Property 'moveChart' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1302,12): error TS2339: Property 'resizeChart' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1311,12): error TS2339: Property 'changeChartType' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1316,12): error TS2339: Property 'changeChartTitle' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1321,12): error TS2339: Property 'changeChartLegend' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1326,12): error TS2339: Property 'changeChartRange' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1338,28): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1366,12): error TS2339: Property 'updateChart' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1378,12): error TS2339: Property 'deleteChart' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1379,19): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1384,19): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1392,15): error TS2345: Argument of type '"chart:rangeChanged"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1392,40): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1392,49): error TS2339: Property 'reason' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1392,57): error TS2339: Property 'range' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1396,12): error TS2339: Property 'createChart' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1420,26): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1452,15): error TS2345: Argument of type '"chart:imported"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1452,36): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1453,15): error TS2345: Argument of type '"chart:exported"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1453,36): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1454,15): error TS2345: Argument of type '"chart:unsupportedFeature"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1454,46): error TS2339: Property 'feature' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1455,15): error TS2345: Argument of type '"chart:renderStarted"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1455,41): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1456,15): error TS2345: Argument of type '"chart:renderFinished"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1456,42): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1457,15): error TS2345: Argument of type '"chart:renderSkipped"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1457,41): error TS2339: Property 'reason' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1458,15): error TS2345: Argument of type '"chart:error"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1458,33): error TS2339: Property 'errorCode' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1461,25): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/core/tests/workbook-engine.spec.ts(1503,44): error TS2554: Expected 0 arguments, but got 1.
+packages/core/tests/workbook-engine.spec.ts(1504,40): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/core/tests/workbook-engine.spec.ts(1507,12): error TS2339: Property 'reportChartRenderStarted' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1508,12): error TS2339: Property 'reportChartRenderFinished' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1509,12): error TS2339: Property 'reportChartRenderSkipped' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1510,12): error TS2339: Property 'reportChartError' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1528,15): error TS2345: Argument of type '"chart:dataInvalid"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/core/tests/workbook-engine.spec.ts(1528,39): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1528,48): error TS2339: Property 'reason' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/core/tests/workbook-engine.spec.ts(1532,12): error TS2339: Property 'createChart' does not exist on type 'WorkbookEngine'.
+packages/core/tests/workbook-engine.spec.ts(1556,26): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(16,12): error TS2304: Cannot find name 'CellAddress'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(17,19): error TS2304: Cannot find name 'CellModel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(18,10): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(20,25): error TS2304: Cannot find name 'CellValidationConfig'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(50,12): error TS2304: Cannot find name 'CellAddress'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(51,19): error TS2304: Cannot find name 'CellModel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(52,10): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(54,25): error TS2304: Cannot find name 'CellValidationConfig'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(200,27): error TS2304: Cannot find name 'SpreadsheetOperation'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(209,11): error TS2304: Cannot find name 'CommentAuthor'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(213,13): error TS2304: Cannot find name 'CommentAuthor'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(219,20): error TS2304: Cannot find name 'WorksheetWidgetObject'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(227,37): error TS2304: Cannot find name 'CollaborationPresence'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(232,36): error TS2304: Cannot find name 'CollaborationPresence'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(347,57): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(353,30): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(353,48): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(407,33): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(407,45): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(412,20): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(426,39): error TS2304: Cannot find name 'CellValidationRule'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(427,43): error TS2304: Cannot find name 'CellValidationRule'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(428,39): error TS2304: Cannot find name 'CellValidationRule'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(432,37): error TS2304: Cannot find name 'CellValidationRule'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(435,41): error TS2304: Cannot find name 'CellValidationRule'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(437,37): error TS2304: Cannot find name 'CellValidationRule'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(439,27): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(485,33): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(485,45): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(504,35): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(520,47): error TS2304: Cannot find name 'columnIndexToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(523,32): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(540,29): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(580,14): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(603,17): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(611,18): error TS2304: Cannot find name 'PivotExecutionMode'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(617,14): error TS2304: Cannot find name 'PivotAggregateFunction'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(705,75): error TS2304: Cannot find name 'PivotAggregateFunction'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(856,39): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(875,18): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(947,32): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(951,58): error TS2304: Cannot find name 'RowModelRow'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(990,45): error TS2304: Cannot find name 'columnIndexToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(994,58): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(999,40): error TS2304: Cannot find name 'columnIndexToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1028,37): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1028,85): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1119,44): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1125,49): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1131,12): error TS2304: Cannot find name 'columnIndexToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1134,62): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1140,66): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1150,67): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1157,10): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1188,50): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1265,35): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1266,41): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1277,54): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1292,102): error TS2304: Cannot find name 'ClientSideFilterDescriptor'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1293,110): error TS2304: Cannot find name 'ClientSideFilterDescriptor'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1313,23): error TS2304: Cannot find name 'ClientSideFilterDescriptor'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1321,54): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1357,35): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1375,52): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1376,35): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1394,54): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1396,39): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1435,83): error TS2304: Cannot find name 'RowModelRow'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1445,34): error TS2304: Cannot find name 'RowResult'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1445,46): error TS2304: Cannot find name 'RowModelRow'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1446,37): error TS7006: Parameter 'row' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1461,35): error TS2304: Cannot find name 'RowResult'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1465,33): error TS2304: Cannot find name 'RowResult'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1493,34): error TS2304: Cannot find name 'RowResult'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1496,42): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1502,41): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1506,44): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1512,23): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1532,23): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1535,20): error TS2304: Cannot find name 'RowModelRow'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1554,23): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1577,77): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1586,47): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1628,55): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1628,119): error TS2304: Cannot find name 'CellAddress'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1647,64): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1647,128): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1764,10): error TS7006: Parameter 'rule' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1769,40): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1769,102): error TS2304: Cannot find name 'SheetMerge'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1770,31): error TS7006: Parameter 'merge' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1774,23): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1777,17): error TS2304: Cannot find name 'CellAddress'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1777,38): error TS2304: Cannot find name 'SheetMerge'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1785,55): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1785,91): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1790,33): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1790,45): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1803,42): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1803,78): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1838,41): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1838,74): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1842,49): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1842,85): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1856,61): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1897,68): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1907,19): error TS2304: Cannot find name 'SpreadsheetOperationError'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1936,64): error TS7006: Parameter 'sheet' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(1956,96): error TS7006: Parameter 'value' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2005,41): error TS2304: Cannot find name 'PivotBuildProgress'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2082,56): error TS2304: Cannot find name 'PivotAggregateFunction'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2182,42): error TS2304: Cannot find name 'PivotBuildProgress'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2229,46): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2229,82): error TS2304: Cannot find name 'CellAddress'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2233,42): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2233,104): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2251,37): error TS2304: Cannot find name 'CellValidationError'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2283,28): error TS2304: Cannot find name 'CellValidationError'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2299,19): error TS2304: Cannot find name 'RowModelRow'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2427,44): error TS7006: Parameter 'segment' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2501,59): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2543,48): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2554,48): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2595,21): error TS2304: Cannot find name 'columnIndexToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2596,19): error TS2304: Cannot find name 'columnIndexToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2684,21): error TS2304: Cannot find name 'CellValidationConfig'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2715,76): error TS7006: Parameter 'rule' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(2877,23): error TS2304: Cannot find name 'SpreadsheetOperation'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3100,23): error TS2304: Cannot find name 'SpreadsheetOperation'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3101,27): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3105,23): error TS2304: Cannot find name 'CellModel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3223,23): error TS2304: Cannot find name 'SpreadsheetOperation'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3253,25): error TS2304: Cannot find name 'CellModel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3375,30): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3399,10): error TS2339: Property 'chartLayoutImageFileInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3400,10): error TS2339: Property 'chartLayoutImageFileInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3401,10): error TS2339: Property 'chartLayoutImageFileInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3402,10): error TS2339: Property 'chartLayoutImageFileInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3403,10): error TS2339: Property 'chartLayoutImageFileInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3404,10): error TS2339: Property 'chartLayoutImageFileInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3404,68): error TS2339: Property 'handleChartLayoutImageFileChange' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3415,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3443,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3583,10): error TS2339: Property 'chartEditTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3584,10): error TS2339: Property 'chartEditTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3585,10): error TS2339: Property 'chartEditTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3586,10): error TS2304: Cannot find name 'CHART_EDIT_TYPE_OPTIONS'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3586,39): error TS7006: Parameter 'optionDef' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3589,30): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3590,33): error TS2339: Property 'isChartTypeEnabled' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3594,10): error TS2339: Property 'chartEditRangeInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3595,10): error TS2339: Property 'chartEditRangeInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3596,10): error TS2339: Property 'chartEditRangeInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3597,10): error TS2339: Property 'chartEditTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3598,10): error TS2339: Property 'chartEditTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3599,10): error TS2339: Property 'chartEditTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3600,10): error TS2339: Property 'chartEditLegendToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3601,10): error TS2339: Property 'chartEditLegendToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3602,10): error TS2339: Property 'chartEditXAxisTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3603,10): error TS2339: Property 'chartEditXAxisTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3604,10): error TS2339: Property 'chartEditXAxisTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3605,10): error TS2339: Property 'chartEditYAxisTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3606,10): error TS2339: Property 'chartEditYAxisTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3607,10): error TS2339: Property 'chartEditYAxisTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3608,10): error TS2339: Property 'chartEditAnnotationTextInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3609,10): error TS2339: Property 'chartEditAnnotationTextInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3610,10): error TS2339: Property 'chartEditAnnotationTextInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3612,13): error TS2339: Property 'chartEditAnnotationXInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3613,13): error TS2339: Property 'chartEditAnnotationYInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3614,13): error TS2339: Property 'chartEditShapeX0Input' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3615,13): error TS2339: Property 'chartEditShapeY0Input' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3616,13): error TS2339: Property 'chartEditShapeX1Input' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3617,13): error TS2339: Property 'chartEditShapeY1Input' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3626,10): error TS2339: Property 'chartEditAnnotationArrowToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3627,10): error TS2339: Property 'chartEditAnnotationArrowToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3628,10): error TS2339: Property 'chartEditShapeTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3629,10): error TS2339: Property 'chartEditShapeTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3630,10): error TS2339: Property 'chartEditShapeTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3638,10): error TS2339: Property 'chartEditXAxisTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3639,10): error TS2339: Property 'chartEditXAxisTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3640,10): error TS2339: Property 'chartEditYAxisTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3641,10): error TS2339: Property 'chartEditYAxisTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3642,29): error TS2304: Cannot find name 'CHART_AXIS_TYPE_OPTIONS'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3642,58): error TS7006: Parameter 'axisType' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3647,27): error TS2339: Property 'chartAxisTypeLinear' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3649,29): error TS2339: Property 'chartAxisTypeCategory' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3651,31): error TS2339: Property 'chartAxisTypeDate' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3652,31): error TS2339: Property 'chartAxisTypeLog' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3655,10): error TS2339: Property 'chartEditXAxisTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3655,75): error TS7006: Parameter 'option' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3656,10): error TS2339: Property 'chartEditYAxisTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3656,75): error TS7006: Parameter 'option' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3657,10): error TS2339: Property 'chartEditXAxisVisibleToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3658,10): error TS2339: Property 'chartEditXAxisVisibleToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3659,10): error TS2339: Property 'chartEditYAxisVisibleToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3660,10): error TS2339: Property 'chartEditYAxisVisibleToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3661,10): error TS2339: Property 'chartEditRangeSelectorToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3662,10): error TS2339: Property 'chartEditRangeSelectorToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3663,10): error TS2339: Property 'chartEditRangeSliderToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3664,10): error TS2339: Property 'chartEditRangeSliderToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3665,10): error TS2339: Property 'chartEditOrientationSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3666,10): error TS2339: Property 'chartEditOrientationSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3667,10): error TS2339: Property 'chartEditOrientationSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3678,10): error TS2339: Property 'chartEditFirstRowHeaderToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3679,10): error TS2339: Property 'chartEditFirstRowHeaderToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3680,10): error TS2339: Property 'chartEditFirstColumnLabelToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3681,10): error TS2339: Property 'chartEditFirstColumnLabelToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3682,10): error TS2339: Property 'chartEditAutoRefreshToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3683,10): error TS2339: Property 'chartEditAutoRefreshToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3684,10): error TS2339: Property 'chartEditCategoryColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3685,10): error TS2339: Property 'chartEditCategoryColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3686,10): error TS2339: Property 'chartEditCategoryColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3687,10): error TS2339: Property 'chartEditCategoryColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3688,10): error TS2339: Property 'chartEditSeriesColumnsInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3689,10): error TS2339: Property 'chartEditSeriesColumnsInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3690,10): error TS2339: Property 'chartEditSeriesColumnsInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3691,10): error TS2339: Property 'chartEditSeriesColumnsInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3692,10): error TS2339: Property 'chartEditValueColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3693,10): error TS2339: Property 'chartEditValueColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3694,10): error TS2339: Property 'chartEditValueColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3695,10): error TS2339: Property 'chartEditValueColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3760,10): error TS2339: Property 'chartEditApplyButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3760,59): error TS2339: Property 'chartEditApply' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3761,10): error TS2339: Property 'chartEditApplyButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3762,17): error TS2339: Property 'chartEditApplyButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3763,10): error TS2339: Property 'chartEditCloseButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3763,59): error TS2339: Property 'chartEditClose' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3764,10): error TS2339: Property 'chartEditCloseButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3765,17): error TS2339: Property 'chartEditCloseButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3769,49): error TS2339: Property 'chartEditTitleLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3770,50): error TS2339: Property 'chartEditTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3774,48): error TS2339: Property 'chartEditTypeLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3775,48): error TS2339: Property 'chartEditTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3779,49): error TS2339: Property 'chartEditRangeLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3780,50): error TS2339: Property 'chartEditRangeInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3784,54): error TS2339: Property 'chartEditXAxisTitleLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3785,60): error TS2339: Property 'chartEditXAxisTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3789,54): error TS2339: Property 'chartEditYAxisTitleLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3790,60): error TS2339: Property 'chartEditYAxisTitleInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3799,76): error TS2339: Property 'chartEditAnnotationTextInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3800,75): error TS2339: Property 'chartEditAnnotationXInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3801,75): error TS2339: Property 'chartEditAnnotationYInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3806,44): error TS2339: Property 'chartEditAnnotationArrowToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3807,68): error TS2339: Property 'chartEditShapeTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3808,76): error TS2339: Property 'chartEditShapeX0Input' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3809,76): error TS2339: Property 'chartEditShapeY0Input' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3810,74): error TS2339: Property 'chartEditShapeX1Input' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3811,74): error TS2339: Property 'chartEditShapeY1Input' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3815,53): error TS2339: Property 'chartEditXAxisTypeLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3816,58): error TS2339: Property 'chartEditXAxisTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3820,53): error TS2339: Property 'chartEditYAxisTypeLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3821,58): error TS2339: Property 'chartEditYAxisTypeSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3825,49): error TS2339: Property 'chartEditLegendLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3826,35): error TS2339: Property 'chartEditLegendToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3830,55): error TS2339: Property 'chartEditXAxisVisibleLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3831,41): error TS2339: Property 'chartEditXAxisVisibleToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3835,55): error TS2339: Property 'chartEditYAxisVisibleLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3836,41): error TS2339: Property 'chartEditYAxisVisibleToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3841,42): error TS2339: Property 'chartEditRangeSelectorToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3846,40): error TS2339: Property 'chartEditRangeSliderToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3850,55): error TS2339: Property 'chartEditOrientationLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3851,62): error TS2339: Property 'chartEditOrientationSelect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3855,58): error TS2339: Property 'chartEditCategoryColumnLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3856,68): error TS2339: Property 'chartEditCategoryColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3860,57): error TS2339: Property 'chartEditSeriesColumnsLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3861,66): error TS2339: Property 'chartEditSeriesColumnsInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3865,55): error TS2339: Property 'chartEditValueColumnLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3866,62): error TS2339: Property 'chartEditValueColumnInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3870,57): error TS2339: Property 'chartEditFirstRowHeaderLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3871,43): error TS2339: Property 'chartEditFirstRowHeaderToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3875,59): error TS2339: Property 'chartEditFirstColumnLabelLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3876,45): error TS2339: Property 'chartEditFirstColumnLabelToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3880,54): error TS2339: Property 'chartEditAutoRefreshLabel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3881,40): error TS2339: Property 'chartEditAutoRefreshToggle' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3882,10): error TS2339: Property 'chartEditPanelHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3885,45): error TS2339: Property 'chartEditPanelTitle' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3886,10): error TS2339: Property 'chartEditPanelHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3895,75): error TS2339: Property 'chartEditApplyButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3895,102): error TS2339: Property 'chartEditCloseButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3896,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3897,12): error TS2339: Property 'chartEditPanelHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3929,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3930,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3931,10): error TS2339: Property 'chartInsertPreviewHost' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3932,10): error TS2339: Property 'chartInsertPreviewInsertButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3932,69): error TS2339: Property 'chartPreviewInsert' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3933,10): error TS2339: Property 'chartInsertPreviewInsertButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3934,17): error TS2339: Property 'chartInsertPreviewInsertButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3935,10): error TS2339: Property 'chartInsertPreviewCancelButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3935,69): error TS2339: Property 'chartPreviewCancel' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3936,10): error TS2339: Property 'chartInsertPreviewCancelButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3937,17): error TS2339: Property 'chartInsertPreviewCancelButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3938,10): error TS2339: Property 'chartInsertPreviewHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3941,52): error TS2339: Property 'chartPreviewTitle' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3942,10): error TS2339: Property 'chartInsertPreviewHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3945,37): error TS2339: Property 'chartInsertPreviewInsertButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3945,74): error TS2339: Property 'chartInsertPreviewCancelButton' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3946,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3946,46): error TS2339: Property 'chartInsertPreviewHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3946,77): error TS2339: Property 'chartInsertPreviewHost' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3963,162): error TS2339: Property 'chartLayoutImageFileInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3964,80): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(3964,101): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4000,10): error TS2339: Property 'chartLayoutImageFileInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4000,71): error TS2339: Property 'handleChartLayoutImageFileChange' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4022,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4022,59): error TS2551: Property 'handleChartEditPanelInput' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handlePivotPanelInput'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4023,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4023,59): error TS2551: Property 'handleChartEditPanelClick' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handleNotePanelClick'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4024,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4024,61): error TS2551: Property 'handleChartEditPanelKeyDown' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handleNotePanelKeyDown'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4025,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4026,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4027,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4027,68): error TS2339: Property 'handleChartInsertPreviewClick' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4028,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4028,70): error TS2339: Property 'handleChartInsertPreviewKeyDown' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4029,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4030,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4031,10): error TS2339: Property 'chartEditPanelHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4031,69): error TS2551: Property 'handleChartEditPanelMouseDown' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handleSplitPaneMouseDown'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4032,10): error TS2339: Property 'chartInsertPreviewHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4032,73): error TS2339: Property 'handleChartPreviewPanelMouseDown' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4033,54): error TS2551: Property 'handleChartPanelMouseMove' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handleSplitPaneMouseMove'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4034,52): error TS2551: Property 'handleChartPanelMouseUp' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handleSplitPaneMouseUp'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4064,10): error TS2339: Property 'destroyAllChartRuntimes' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4065,10): error TS2339: Property 'destroyAllWidgetRuntimes' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4073,46): error TS7031: Binding element 'operations' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4073,58): error TS7031: Binding element 'commandType' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4073,71): error TS7031: Binding element 'sheetId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4113,47): error TS7031: Binding element 'sheetId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4113,56): error TS7031: Binding element 'objectId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4113,66): error TS7031: Binding element 'reason' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4113,74): error TS7031: Binding element 'range' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4115,16): error TS2339: Property 'refreshBoundChartFigure' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4118,46): error TS7031: Binding element 'sheetId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4119,14): error TS2339: Property 'setChartFeedback' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4122,43): error TS7031: Binding element 'sheetId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4122,52): error TS7031: Binding element 'objectId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4124,16): error TS2339: Property 'selectedChartId' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4128,45): error TS7031: Binding element 'sheetId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4128,54): error TS7031: Binding element 'objectId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4129,73): error TS2339: Property 'selectedChartId' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4130,16): error TS2339: Property 'selectedChartId' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4134,42): error TS7031: Binding element 'sheetId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4134,51): error TS7031: Binding element 'objectId' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4135,18): error TS2339: Property 'selectedChartId' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4136,16): error TS2339: Property 'selectedChartId' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4141,14): error TS2339: Property 'destroyChartRuntime' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4142,14): error TS2551: Property 'chartObjectElementById' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'imageObjectElementById'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4143,14): error TS2551: Property 'chartObjectElementById' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'imageObjectElementById'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4144,14): error TS2339: Property 'chartBodyElementById' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4194,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4194,56): error TS2551: Property 'handleChartEditPanelInput' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handlePivotPanelInput'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4195,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4195,56): error TS2551: Property 'handleChartEditPanelClick' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handleNotePanelClick'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4196,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4196,58): error TS2551: Property 'handleChartEditPanelKeyDown' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handleNotePanelKeyDown'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4197,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4198,10): error TS2339: Property 'chartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4199,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4199,65): error TS2339: Property 'handleChartInsertPreviewClick' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4200,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4200,67): error TS2339: Property 'handleChartInsertPreviewKeyDown' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4201,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4202,10): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4203,10): error TS2339: Property 'chartEditPanelHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4203,66): error TS2551: Property 'handleChartEditPanelMouseDown' does not exist on type 'DomSpreadsheetRenderer'. Did you mean 'handleSplitPaneMouseDown'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4204,10): error TS2339: Property 'chartInsertPreviewHeader' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4204,70): error TS2339: Property 'handleChartPreviewPanelMouseDown' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4242,29): error TS2339: Property 'getChartPerformanceOptions' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4347,23): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4438,10): error TS2339: Property 'setChartSelection' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4463,12): error TS2339: Property 'setChartSelection' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4482,10): error TS2339: Property 'setChartSelection' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4513,10): error TS2339: Property 'setChartSelection' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4562,55): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(4566,95): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5217,59): error TS2304: Cannot find name 'PivotAggregateFunction'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5223,82): error TS2304: Cannot find name 'PivotExecutionMode'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5276,15): error TS2339: Property 'chartInsertPreviewPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5277,12): error TS2339: Property 'closeChartInsertPreview' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5279,15): error TS2339: Property 'selectedChartId' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5287,10): error TS2339: Property 'setChartSelection' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5309,31): error TS2304: Cannot find name 'CommentAuthor'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5386,30): error TS2304: Cannot find name 'SpreadsheetOperationError'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5386,60): error TS18046: 'error' is of type 'unknown'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5603,40): error TS2304: Cannot find name 'CellStyle'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5708,28): error TS2339: Property 'isChartToolbarAction' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5709,16): error TS2339: Property 'createChartFromSelection' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5738,23): error TS2304: Cannot find name 'cellAddressToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5804,34): error TS2339: Property 'getChartSourceRange' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5806,41): error TS2339: Property 'chartInvalidRange' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5808,30): error TS2339: Property 'createChartBindingOptions' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5809,33): error TS2339: Property 'createSpreadsheetRangeInput' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5810,36): error TS2339: Property 'resolveChartCategoryColumnIndex' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5811,33): error TS2339: Property 'getNumericChartSeriesIndexes' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5813,17): error TS7006: Parameter 'row' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5813,123): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5814,20): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5816,48): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5824,28): error TS2339: Property 'sanitizeChartText' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5824,63): error TS2339: Property 'chartGeo' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5835,39): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5836,36): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5843,28): error TS2339: Property 'createDefaultWorksheetObjectPosition' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5850,14): error TS2339: Property 'setChartFeedback' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5850,96): error TS2339: Property 'chartInsertError' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(5950,10): error TS2339: Property 'closeChartInsertPreview' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6102,28): error TS2304: Cannot find name 'CellValidationError'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6104,20): error TS18046: 'error' is of type 'unknown'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6105,16): error TS18046: 'error' is of type 'unknown'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6106,16): error TS18046: 'error' is of type 'unknown'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6107,20): error TS18046: 'error' is of type 'unknown'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6130,10): error TS2339: Property 'setChartSelection' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6177,21): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6215,19): error TS2304: Cannot find name 'cellAddressToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6220,73): error TS2532: Object is possibly 'undefined'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6222,68): error TS2532: Object is possibly 'undefined'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6223,75): error TS2532: Object is possibly 'undefined'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6224,30): error TS2339: Property 'chartFeedback' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6224,73): error TS2339: Property 'chartFeedback' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6225,37): error TS2339: Property 'chartFeedback' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6225,80): error TS2339: Property 'chartFeedback' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6242,10): error TS2339: Property 'renderChartEditPanel' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6314,28): error TS2304: Cannot find name 'columnIndexToLabel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6326,23): error TS2304: Cannot find name 'WorkbookEngine'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6329,21): error TS2304: Cannot find name 'CellRange'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6330,20): error TS2304: Cannot find name 'CellAddress'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6453,52): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6557,45): error TS2551: Property 'toolbarChartsGroup' does not exist on type 'RendererMessages'. Did you mean 'toolbarDataGroup'?
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6562,43): error TS2304: Cannot find name 'ChartToolbarCategory'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6583,43): error TS2304: Cannot find name 'ChartToolbarCategory'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6584,47): error TS2339: Property 'toolbarChartsCommonGroup' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6585,52): error TS2339: Property 'toolbarChartsStatisticalGroup' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6586,50): error TS2339: Property 'toolbarChartsFinancialGroup' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6587,49): error TS2339: Property 'toolbarChartsAdvancedGroup' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6619,54): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6701,32): error TS2339: Property 'isChartToolbarAction' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6702,48): error TS2304: Cannot find name 'CHART_PLACEHOLDER_ACTIONS'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6705,28): error TS2339: Property 'createChartToolbarIcon' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6709,75): error TS2339: Property 'chartUnsupportedType' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6748,35): error TS2304: Cannot find name 'CHART_TOOLBAR_DEFINITIONS'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6750,21): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6755,83): error TS2339: Property 'chartUnsupportedType' does not exist on type 'RendererMessages'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6756,26): error TS2339: Property 'createChartToolbarIcon' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6842,41): error TS2304: Cannot find name 'SheetMerge'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6863,16): error TS7006: Parameter 'presence' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6921,11): error TS18048: 'activeFindMatch' is possibly 'undefined'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(6922,11): error TS18048: 'activeFindMatch' is possibly 'undefined'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7051,42): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7051,62): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7056,23): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7058,22): error TS2304: Cannot find name 'CellPrimitive'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7068,12): error TS2304: Cannot find name 'WorksheetModel'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7074,65): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7076,25): error TS2339: Property 'resolveVisualObjectRect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7103,67): error TS7006: Parameter 'item' implicitly has an 'any' type.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7105,25): error TS2339: Property 'resolveVisualObjectRect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7120,14): error TS2339: Property 'destroyWidgetRuntime' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7129,43): error TS2304: Cannot find name 'WorksheetImageObject'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7184,45): error TS2304: Cannot find name 'WorksheetWidgetObject'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7220,38): error TS2304: Cannot find name 'WorksheetWidgetObject'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7225,10): error TS2339: Property 'destroyWidgetRuntime' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7288,29): error TS2339: Property 'resolveVisualObjectRect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7350,107): error TS2304: Cannot find name 'WorksheetImageObject'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7350,130): error TS2304: Cannot find name 'WorksheetWidgetObject'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7365,27): error TS2339: Property 'resolveWorksheetObjectPositionFromRect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7407,25): error TS2339: Property 'resolveVisualObjectRect' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7437,29): error TS2339: Property 'getChartPerformanceOptions' does not exist on type 'DomSpreadsheetRenderer'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7513,46): error TS2304: Cannot find name 'RowModelRow'.
+packages/renderer-dom/src/dom-spreadsheet-renderer.ts(7513,85): error TS2304: Cannot find name 'RowModelRow'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(2812,29): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(2866,28): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(2877,32): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(2930,30): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(2931,34): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(2950,36): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(2969,28): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(2996,30): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3002,21): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3081,15): error TS2345: Argument of type '"chart:selected"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3081,36): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3082,15): error TS2345: Argument of type '"chart:unselected"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3082,38): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3096,30): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3153,29): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3230,29): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3231,26): error TS7006: Parameter 'chart' implicitly has an 'any' type.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3277,29): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3278,26): error TS7006: Parameter 'chart' implicitly has an 'any' type.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3318,29): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3319,26): error TS7006: Parameter 'chart' implicitly has an 'any' type.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3359,44): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3360,21): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3365,21): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3413,30): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3436,28): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3471,30): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3479,21): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3505,30): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3510,45): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3512,22): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3535,30): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3541,21): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3579,7): error TS2353: Object literal may only specify known properties, and 'chartInsertPreview' does not exist in type 'DomSpreadsheetRendererOptions'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3591,21): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3595,21): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3638,30): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3653,28): error TS2339: Property 'getChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3711,7): error TS2353: Object literal may only specify known properties, and 'chartLimits' does not exist in type 'DomSpreadsheetRendererOptions'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3730,23): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3732,23): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3779,21): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3814,15): error TS2345: Argument of type '"chart:renderStarted"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3814,41): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3815,15): error TS2345: Argument of type '"chart:renderFinished"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3815,42): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3816,15): error TS2345: Argument of type '"chart:renderSkipped"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3816,41): error TS2339: Property 'reason' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3818,12): error TS2339: Property 'createChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3850,12): error TS2339: Property 'createChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3932,14): error TS2339: Property 'createChart' does not exist on type 'WorkbookEngine'.
+packages/renderer-dom/tests/dom-spreadsheet-renderer.spec.ts(3976,7): error TS2353: Object literal may only specify known properties, and 'chartPerformance' does not exist in type 'DomSpreadsheetRendererOptions'.
+packages/vanilla/src/create-spreadsheet.ts(21,47): error TS2339: Property 'chartLimits' does not exist on type 'DomSpreadsheetRendererOptions'.
+packages/vanilla/src/create-spreadsheet.ts(22,52): error TS2339: Property 'chartPerformance' does not exist on type 'DomSpreadsheetRendererOptions'.
+packages/vanilla/src/create-spreadsheet.ts(23,54): error TS2339: Property 'chartInsertPreview' does not exist on type 'DomSpreadsheetRendererOptions'.
+packages/vanilla/src/create-spreadsheet.ts(50,5): error TS2353: Object literal may only specify known properties, and 'chartLimits' does not exist in type 'DomSpreadsheetRendererOptions'.
+packages/xlsx/src/xlsx-adapter.ts(12,8): error TS2305: Module '"@excelsior/core"' has no exported member 'ChartRangeBinding'.
+packages/xlsx/src/xlsx-adapter.ts(17,8): error TS2724: '"@excelsior/core"' has no exported member named 'WorksheetChartObject'. Did you mean 'WorksheetImageObject'?
+packages/xlsx/src/xlsx-adapter.ts(18,8): error TS2305: Module '"@excelsior/core"' has no exported member 'WorksheetChartType'.
+packages/xlsx/src/xlsx-adapter.ts(2073,42): error TS7006: Parameter 'trace' implicitly has an 'any' type.
+packages/xlsx/src/xlsx-adapter.ts(2073,49): error TS7006: Parameter 'index' implicitly has an 'any' type.
+packages/xlsx/src/xlsx-adapter.ts(2432,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/src/xlsx-adapter.ts(2432,49): error TS7006: Parameter 'chart' implicitly has an 'any' type.
+packages/xlsx/src/xlsx-adapter.ts(2479,34): error TS7006: Parameter 'trace' implicitly has an 'any' type.
+packages/xlsx/src/xlsx-adapter.ts(2656,35): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/src/xlsx-adapter.ts(2656,57): error TS7006: Parameter 'chart' implicitly has an 'any' type.
+packages/xlsx/src/xlsx-adapter.ts(2707,48): error TS7006: Parameter 'chart' implicitly has an 'any' type.
+packages/xlsx/src/xlsx-adapter.ts(2851,41): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/src/xlsx-adapter.ts(2854,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(442,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(443,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(443,40): error TS7006: Parameter 'chart' implicitly has an 'any' type.
+packages/xlsx/tests/xlsx.spec.ts(444,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(444,40): error TS7006: Parameter 'chart' implicitly has an 'any' type.
+packages/xlsx/tests/xlsx.spec.ts(445,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(446,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(447,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(448,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(449,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(450,27): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(451,41): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(452,41): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(453,40): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(461,46): error TS2339: Property 'charts' does not exist on type 'SheetModel'.
+packages/xlsx/tests/xlsx.spec.ts(586,18): error TS2339: Property 'createChart' does not exist on type 'WorkbookEngine'.
+packages/xlsx/tests/xlsx.spec.ts(621,21): error TS2345: Argument of type '"chart:exported"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/xlsx/tests/xlsx.spec.ts(621,42): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/xlsx/tests/xlsx.spec.ts(628,21): error TS2345: Argument of type '"chart:imported"' is not assignable to parameter of type 'keyof SpreadsheetEventMap'.
+packages/xlsx/tests/xlsx.spec.ts(628,42): error TS2339: Property 'chartId' does not exist on type '{ timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; } | { timestamp: number; workbookId: string; sheetId?: string | undefined; durationMs: number; commandType: string; operations: SpreadsheetOperation[]; } | ... 30 more ... | { ...; }'.
+packages/xlsx/tests/xlsx.spec.ts(632,25): error TS2339: Property 'getCharts' does not exist on type 'WorkbookEngine'.
+packages/xlsx/tests/xlsx.spec.ts(722,39): error TS2339: Property 'charts' does not exist on type 'SheetModel'.

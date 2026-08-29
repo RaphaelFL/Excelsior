@@ -14,7 +14,7 @@ related:
 
 ## Visão geral
 
-O contrato público do Excelsior é centrado em um core sem framework, com wrappers finos para browser puro, React e Vue 3. O ponto de entrada principal do domínio é `WorkbookEngine` no pacote `@excelsior/core`.
+O contrato público do Excelsior é centrado em um core sem framework e um wrapper fino para browser puro. O ponto de entrada principal do domínio é `WorkbookEngine` no pacote `@excelsior/core`.
 
 ## Pacotes públicos
 
@@ -24,10 +24,14 @@ O contrato público do Excelsior é centrado em um core sem framework, com wrapp
 | `@excelsior/formulas` | avaliação segura de fórmulas | `BasicFormulaEngine` |
 | `@excelsior/renderer-dom` | renderer DOM e utilitários de clipboard/viewport | `DomSpreadsheetRenderer` |
 | `@excelsior/vanilla` | inicialização sem framework | `createSpreadsheet()` |
-| `@excelsior/react` | wrapper React | `Spreadsheet` |
-| `@excelsior/vue` | wrapper Vue 3 | `Spreadsheet` |
 | `@excelsior/xlsx` | import/export de workbook e fluxo tabular | `exportWorkbookToXlsx()`, `importWorkbookFromXlsx()` |
 | `@excelsior/devtools` | inspeção leve de eventos do engine | `attachWorkbookDevtools()` |
+
+O `BasicFormulaEngine` inclui agregações, lógica e funções numéricas comuns: `SUM`, `MIN`, `MAX`, `AVERAGE`, `MEDIAN`, `PRODUCT`, `COUNT`, `COUNTA`, `ABS`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `SQRT`, `POWER`, `MOD`, `SIGN`, `IF`, `AND`, `OR` e `NOT`.
+
+O adapter XLSX grava comentários legados e validações compatíveis em partes OOXML nativas. Threads, respostas e regras sem representação equivalente permanecem na metadata privada versionada para roundtrip completo no Excelsior.
+
+`createCollaborationTransportAdapter(transport)` fornece a ponte oficial entre o engine e um transporte futuro. O contrato público inclui mensagens versionadas de `join`, `leave`, operações, presença, replay inicial e erro, sem acoplar o core a WebSocket ou backend específico. Consulte [collaboration.md](collaboration.md).
 
 ## `@excelsior/core`
 
@@ -78,6 +82,8 @@ No core, leituras quentes como `getDisplayValue()` usam cache por revisão inter
 | `getPluginState(pluginId)` | lê o estado isolado do plugin | `PluginState | undefined` |
 | `setCellValidation(input)` | grava regras serializáveis de validação na célula | `SpreadsheetOperation[]` |
 | `getCellValidation(sheetId, row, col)` | lê as regras de validação de uma célula | `CellValidationConfig | undefined` |
+| `setCellNote(input)` | cria, edita ou remove uma nota textual serializável com histórico | `SpreadsheetOperation[]` |
+| `getCellNote(sheetId, row, col)` | lê a nota textual de uma célula | `string | undefined` |
 | `validateCellValue(input)` | avalia um valor sem mutar o workbook | `CellValidationResult` |
 | `registerValidator(id, validator)` | registra um validador customizado seguro | `void` |
 | `unregisterValidator(id)` | remove um validador customizado | `void` |
@@ -225,7 +231,7 @@ engine.addSheet(pivot);
 
 `inferPivotSheet(input)` usa uma heurística inicial simples e pública: escolhe a última coluna numérica como medida (ou a última coluna do range quando não houver números), usa a primeira dimensão como `rows` e envia as demais dimensões para `columns`.
 
-O contrato atual suporta `rows`, `columns`, múltiplos `values`, aliases por medida, agregadores `sum|avg|min|max|count`, totais, subtotais de linha e materialização como nova sheet derivada. O renderer DOM e o wrapper vanilla agora expõem uma UI mínima na formula bar para configurar essas opções antes de criar a pivot, usando `addPivotSheetAsync()` no fluxo visual para ceder o controle entre blocos, reportar progresso e permitir cancelamento em datasets maiores. Ainda falta pivot server-side e view virtualizada específica.
+O contrato atual suporta `rows`, `columns`, múltiplos `values`, aliases por medida, agregadores `sum|avg|min|max|count`, totais, subtotais de linha e materialização como nova sheet derivada. O renderer DOM e o wrapper vanilla expõem uma UI na formula bar para configurar essas opções antes de criar a pivot, usando `addPivotSheetAsync()` no fluxo visual para ceder o controle entre blocos, reportar progresso e permitir cancelamento em datasets maiores. Row models remotos podem delegar a materialização ao datasource; uma view virtualizada específica de pivot permanece fora do escopo atual.
 
 ### Data Source API
 
@@ -423,36 +429,6 @@ const instance = createSpreadsheet(container, {
 
 `createSpreadsheet()` também aceita `rowModel`, aplicado inicialmente à sheet ativa criada pela engine.
 
-## `@excelsior/react`
-
-### `Spreadsheet`
-
-Componente React fino sobre o wrapper vanilla.
-
-```tsx
-import { Spreadsheet } from "@excelsior/react";
-
-<Spreadsheet
-  data={[{ name: "Sheet1" }]}
-  onChange={(operations) => console.log(operations)}
-  style={{ width: 960, height: 540 }}
-/>
-```
-
-Props públicas: todas as props de `CreateSpreadsheetOptions` mais `className` e `style`.
-
-## `@excelsior/vue`
-
-### `Spreadsheet`
-
-Componente Vue 3 fino sobre o wrapper vanilla.
-
-```ts
-import { Spreadsheet } from "@excelsior/vue";
-```
-
-Props públicas: `data`, `settings`, `metadata`, `onChange`, `cellRenderers`, `cellEditors`, `includeHiddenCellsInClipboard`, `autofill`, `localization` e `rowModel`.
-
 ## `@excelsior/renderer-dom`
 
 ### Principais exports
@@ -504,7 +480,7 @@ Atalhos padrão do renderer DOM:
 | Função | Descrição |
 |---|---|
 | `exportTableToXlsx(rows, options)` | exporta objetos a partir de um schema de colunas |
-| `importTableFromXlsx(input, options)` | importa objetos com `schema` do `read-excel-file` |
+| `importTableFromXlsx(input, options)` | importa objetos com o schema tabular nativo do Excelsior |
 
 ## `@excelsior/devtools`
 

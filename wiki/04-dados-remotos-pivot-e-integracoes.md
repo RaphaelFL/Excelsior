@@ -205,6 +205,13 @@ session.stop();
 
 ## Benchmark
 
+O app benchmark cobre dois blocos:
+
+- mutacoes sequenciais vs batch
+- pivot pesado client vs worker vs server
+
+Suba com:
+
 ## Proximo passo
 
 Leia [05-seguranca-performance-e-operacao.md](./05-seguranca-performance-e-operacao.md) para limites, erros e operacao segura.

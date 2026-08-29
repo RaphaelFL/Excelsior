@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
+  CollaborationConnection,
+  CollaborationEnvelope,
+  CollaborationPresenceMessage,
   FormulaEngine,
   FormulaEvaluationContext,
   FormulaEvaluationResult,
@@ -46,6 +49,32 @@ describe("WorkbookEngine", () => {
     expect(snapshot.sheets[0]?.name).toBe("Sheet1");
   });
 
+  it("persists split panes per sheet with typed events and undo/redo", () => {
+    const engine = new WorkbookEngine({ data: [{ id: "split", rowCount: 20, columnCount: 10 }] });
+    const changed = vi.fn();
+    engine.on("split-pane:changed", changed);
+
+    engine.setSplitPane("split", { horizontalRow: 4, verticalColumn: 3 });
+    const splitPane = engine.getSplitPane("split");
+    splitPane!.horizontalRow = 9;
+
+    expect(engine.getSplitPane("split")).toEqual({ horizontalRow: 4, verticalColumn: 3 });
+    expect(engine.toJSON().sheets[0]?.splitPane).toEqual({ horizontalRow: 4, verticalColumn: 3 });
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({
+      sheetId: "split",
+      splitPane: { horizontalRow: 4, verticalColumn: 3 }
+    }));
+
+    expect(engine.undo()).toBe(true);
+    expect(engine.getSplitPane("split")).toBeUndefined();
+    expect(engine.redo()).toBe(true);
+    expect(engine.getSplitPane("split")).toEqual({ horizontalRow: 4, verticalColumn: 3 });
+
+    engine.clearSplitPane("split");
+    expect(engine.getSplitPane("split")).toBeUndefined();
+    expect(() => engine.setSplitPane("split", { horizontalRow: 20 })).toThrow(RangeError);
+  });
+
   it("sets cell values through typed commands and emits serializable ops", () => {
     const engine = new WorkbookEngine();
     const sheet = engine.getActiveSheet();
@@ -64,6 +93,179 @@ describe("WorkbookEngine", () => {
     });
   });
 
+  it("applies undoable multi-column sort and typed filters only to client-side rows", () => {
+    const engine = new WorkbookEngine({
+      data: [{
+        id: "local",
+        rowCount: 5,
+        columnCount: 3,
+        cells: {
+          "0:0": { value: "Name" }, "0:1": { value: "Score" }, "0:2": { value: "Date" },
+          "1:0": { value: "Beta" }, "1:1": { value: 10 }, "1:2": { value: "2026-01-03" },
+          "2:0": { value: "Alpha" }, "2:1": { value: 20 }, "2:2": { value: "2026-01-02" },
+          "3:0": { value: "Alpine" }, "3:1": { value: 20 }, "3:2": { value: "2026-01-01" },
+          "4:0": { value: "Gamma" }, "4:1": { value: 5 }, "4:2": { value: "2025-12-31" }
+        }
+      }]
+    });
+    const applied = vi.fn();
+    engine.on("client-side-query:applied", applied);
+
+    engine.applyClientSideSortFilter({
+      sheetId: "local",
+      sort: [{ column: 1, direction: "desc" }, { column: 0, direction: "asc" }],
+      filters: [
+        { column: 0, type: "text", operator: "startsWith", value: "al" },
+        { column: 1, type: "number", operator: "between", value: 15, valueTo: 25 },
+        { column: 2, type: "date", operator: "gte", value: "2026-01-01" }
+      ]
+    });
+
+    expect(engine.getDisplayValue("local", 0, 0)).toBe("Name");
+    expect(engine.getDisplayValue("local", 1, 0)).toBe("Alpha");
+    expect(engine.getDisplayValue("local", 2, 0)).toBe("Alpine");
+    expect(engine.getRowSchema("local", 1)?.hidden).toBe(false);
+    expect(engine.getRowSchema("local", 3)?.hidden).toBe(true);
+    expect(engine.getClientSideQuery("local")?.sort).toHaveLength(2);
+    expect(applied).toHaveBeenCalledWith(expect.objectContaining({ sheetId: "local" }));
+
+    expect(engine.undo()).toBe(true);
+    expect(engine.getDisplayValue("local", 1, 0)).toBe("Beta");
+    expect(engine.getClientSideQuery("local")).toBeUndefined();
+
+    engine.setRowModel("local", new ServerSideRowModel({ dataSource: { getRows: vi.fn() } }));
+    expect(() => engine.applyClientSideSortFilter({ sheetId: "local" })).toThrow(/client-side rows/);
+  });
+
+  it.each([
+    ["text", "equals", "Alpha", undefined, false],
+    ["text", "contains", "ph", undefined, false],
+    ["number", "gt", 20, undefined, true],
+    ["number", "gte", 20, undefined, false],
+    ["number", "lt", 20, undefined, true],
+    ["number", "lte", 20, undefined, false],
+    ["date", "between", "2026-01-01", "2026-01-31", false]
+  ] as const)("supports %s %s client-side filters", (type, operator, value, valueTo, hidden) => {
+    const engine = new WorkbookEngine({ data: [{ rowCount: 2, columnCount: 3, cells: {
+      "1:0": { value: "Alpha" }, "1:1": { value: 20 }, "1:2": { value: "2026-01-15" }
+    } }] });
+    const column = type === "text" ? 0 : type === "number" ? 1 : 2;
+    engine.applyClientSideSortFilter({
+      sheetId: engine.getActiveSheet().id,
+      filters: [{ column, type, operator, value, valueTo }]
+    });
+    expect(engine.getRowSchema(engine.getActiveSheet().id, 1)?.hidden).toBe(hidden);
+  });
+
+  it("synchronizes collaboration operations without echoing remote envelopes", async () => {
+    let connection: CollaborationConnection | undefined;
+    const sent: CollaborationEnvelope[] = [];
+    const adapter = {
+      connect: vi.fn((next: CollaborationConnection) => {
+        connection = next;
+      }),
+      send: vi.fn((envelope: CollaborationEnvelope) => {
+        sent.push(envelope);
+      }),
+      disconnect: vi.fn()
+    };
+    const engine = new WorkbookEngine({ collaboration: { adapter, clientId: "local" } });
+    const sheet = engine.getActiveSheet();
+
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 1, value: "local value" });
+    await waitFor(() => sent.length === 1, "Expected local collaboration envelope.");
+    expect(sent[0]).toMatchObject({ clientId: "local", sequence: 1, sheetId: sheet.id });
+
+    const remoteEnvelope: CollaborationEnvelope = {
+      id: "remote:1",
+      workbookId: engine.getSnapshot().id,
+      clientId: "remote",
+      sequence: 1,
+      timestamp: Date.now(),
+      sheetId: sheet.id,
+      operations: [{ op: "add", id: sheet.id, path: ["cells", "2:2"], value: { value: "remote value" } }]
+    };
+    connection?.receive(remoteEnvelope);
+    expect(engine.getDisplayValue(sheet.id, 2, 2)).toBe("remote value");
+    expect(sent).toHaveLength(1);
+    expect(engine.applyCollaborationEnvelope(remoteEnvelope)).toBe(false);
+
+    engine.dispose();
+    expect(adapter.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("shares typed presence, remote cursors and expires stale collaborators", async () => {
+    let connection: CollaborationConnection | undefined;
+    const presenceMessages: CollaborationPresenceMessage[] = [];
+    const adapter = {
+      connect: vi.fn((next: CollaborationConnection) => {
+        connection = next;
+      }),
+      send: vi.fn(),
+      updatePresence: vi.fn((message: CollaborationPresenceMessage) => {
+        presenceMessages.push(message);
+      }),
+      removePresence: vi.fn((message: CollaborationPresenceMessage) => {
+        presenceMessages.push(message);
+      })
+    };
+    const engine = new WorkbookEngine({ collaboration: { adapter, clientId: "local", presenceTtlMs: 1_000 } });
+    const sheet = engine.getActiveSheet();
+    const presenceEvents: string[] = [];
+    engine.on("collaboration:presenceChanged", ({ presence }) => presenceEvents.push(presence.clientId));
+    engine.on("collaboration:presenceRemoved", ({ clientId, reason }) => presenceEvents.push(`${clientId}:${reason}`));
+
+    engine.updatePresence({
+      user: { id: "user-local", name: "Local User" },
+      cursor: { sheetId: sheet.id, row: 2, col: 3 },
+      selection: { sheetId: sheet.id, range: { start: { row: 2, col: 3 }, end: { row: 4, col: 3 } } }
+    });
+    expect(engine.getPresence("local")?.cursor).toMatchObject({ row: 2, col: 3 });
+    expect(presenceMessages[0]).toMatchObject({ type: "presence:update", clientId: "local", sequence: 1 });
+
+    connection?.receivePresence?.({
+      type: "presence:update",
+      workbookId: engine.getSnapshot().id,
+      clientId: "remote",
+      sequence: 4,
+      timestamp: Date.now(),
+      presence: {
+        clientId: "remote",
+        sequence: 4,
+        updatedAt: Date.now(),
+        expiresAt: Date.now() - 1,
+        user: { id: "user-remote", name: "Remote User" },
+        cursor: { sheetId: sheet.id, row: 8, col: 1 }
+      }
+    });
+    expect(engine.getPresence("remote")).toBeUndefined();
+    expect(presenceEvents).toContain("remote:expired");
+
+    engine.removePresence();
+    expect(engine.getPresence("local")).toBeUndefined();
+    expect(presenceMessages.at(-1)).toMatchObject({ type: "presence:remove", clientId: "local", sequence: 2 });
+  });
+
+  it("uses sequence and clientId last-write-wins ordering for collaboration envelopes", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const envelope = (clientId: string, sequence: number, value: string): CollaborationEnvelope => ({
+      id: `${clientId}:${sequence}:${value}`,
+      workbookId: engine.getSnapshot().id,
+      clientId,
+      sequence,
+      timestamp: Date.now(),
+      sheetId: sheet.id,
+      operations: [{ op: "add", id: sheet.id, path: ["cells", "3:3"], value: { value } }]
+    });
+
+    expect(engine.applyCollaborationEnvelope(envelope("beta", 2, "newer"))).toBe(true);
+    expect(engine.applyCollaborationEnvelope(envelope("zeta", 2, "tie winner"))).toBe(true);
+    expect(engine.applyCollaborationEnvelope(envelope("alpha", 2, "tie loser"))).toBe(false);
+    expect(engine.applyCollaborationEnvelope(envelope("zeta", 1, "stale"))).toBe(false);
+    expect(engine.getDisplayValue(sheet.id, 3, 3)).toBe("tie winner");
+  });
+
   it("supports undo and redo for value changes", () => {
     const engine = new WorkbookEngine();
     const sheet = engine.getActiveSheet();
@@ -76,6 +278,210 @@ describe("WorkbookEngine", () => {
 
     expect(engine.redo()).toBe(true);
     expect(engine.getDisplayValue(sheet.id, 0, 0)).toBe("A");
+  });
+
+  it("creates, serializes and removes cell notes with undo and redo", () => {
+    const engine = new WorkbookEngine({ settings: { maxCellLength: 32 } });
+    const sheet = engine.getActiveSheet();
+    const events: Array<string | undefined> = [];
+    engine.on("cell:noteChanged", ({ note }) => events.push(note));
+
+    engine.setCellNote({ sheetId: sheet.id, row: 1, col: 2, note: "Revisar orçamento" });
+    expect(engine.getCellNote(sheet.id, 1, 2)).toBe("Revisar orçamento");
+    expect(WorkbookEngine.fromJSON(engine.toJSON()).getCellNote(sheet.id, 1, 2)).toBe("Revisar orçamento");
+
+    expect(engine.undo()).toBe(true);
+    expect(engine.getCellNote(sheet.id, 1, 2)).toBeUndefined();
+    expect(engine.redo()).toBe(true);
+    expect(engine.getCellNote(sheet.id, 1, 2)).toBe("Revisar orçamento");
+
+    engine.setCellNote({ sheetId: sheet.id, row: 1, col: 2 });
+    expect(engine.getCellNote(sheet.id, 1, 2)).toBeUndefined();
+    expect(events).toEqual(["Revisar orçamento", undefined]);
+    expect(() => engine.setCellNote({ sheetId: sheet.id, row: 1, col: 2, note: "x".repeat(33) })).toThrow(
+      /maximum length/
+    );
+  });
+
+  it("stores safe rich text transactionally without replacing other cell content", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 2, value: "Original" });
+    engine.setCellNote({ sheetId: sheet.id, row: 1, col: 2, note: "Keep" });
+    const events: unknown[] = [];
+    engine.on("cell:richTextChanged", (event) => events.push(event.richText));
+
+    engine.setCellRichText({
+      sheetId: sheet.id,
+      row: 1,
+      col: 2,
+      richText: [
+        { text: "Safe ", style: { bold: true, color: "#123abc" } },
+        { text: "link", style: { italic: true, underline: true, strike: true }, hyperlink: "https://example.com/path" },
+        { text: "mail", hyperlink: "mailto:user@example.com" }
+      ]
+    });
+
+    expect(engine.getCell(sheet.id, 1, 2)).toMatchObject({ value: "Original", note: "Keep" });
+    expect(engine.getCellRichText(sheet.id, 1, 2)).toHaveLength(3);
+    expect(events).toHaveLength(1);
+    expect(WorkbookEngine.fromJSON(engine.toJSON()).getCellRichText(sheet.id, 1, 2)).toEqual(
+      engine.getCellRichText(sheet.id, 1, 2)
+    );
+    expect(engine.undo()).toBe(true);
+    expect(engine.getCellRichText(sheet.id, 1, 2)).toBeUndefined();
+    expect(engine.redo()).toBe(true);
+    expect(engine.getCellRichText(sheet.id, 1, 2)?.[1]?.hyperlink).toBe("https://example.com/path");
+
+    expect(() =>
+      engine.setCellRichText({ sheetId: sheet.id, row: 1, col: 2, richText: [{ text: "bad", hyperlink: "javascript:alert(1)" }] })
+    ).toThrow(/HTTPS or mailto/);
+    expect(() =>
+      engine.setCellRichText({ sheetId: sheet.id, row: 1, col: 2, richText: [{ text: "bad", style: { color: "url(x)" } }] })
+    ).toThrow(/color is not supported/);
+  });
+
+  it("creates serialized comment threads transactionally while preserving legacy notes", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const events: string[] = [];
+    engine.on("cell:commentCreated", ({ comment }) => events.push(`created:${comment.id}`));
+    engine.on("cell:commentReplied", ({ reply }) => events.push(`replied:${reply.id}`));
+    engine.on("cell:commentResolved", ({ commentId, resolved }) => events.push(`resolved:${commentId}:${resolved}`));
+
+    engine.setCellNote({ sheetId: sheet.id, row: 5, col: 2, note: "Legacy note" });
+    engine.createCellComment({
+      sheetId: sheet.id,
+      row: 5,
+      col: 2,
+      comment: { id: "comment-1", author: { id: "ana", name: "Ana" }, content: "Review this value" }
+    });
+    engine.replyToCellComment({
+      sheetId: sheet.id,
+      row: 5,
+      col: 2,
+      commentId: "comment-1",
+      reply: { id: "reply-1", author: { id: "rui", name: "Rui" }, content: "Reviewed" }
+    });
+    engine.resolveCellComment({ sheetId: sheet.id, row: 5, col: 2, commentId: "comment-1", resolved: true });
+
+    expect(engine.getCellNote(sheet.id, 5, 2)).toBe("Legacy note");
+    expect(engine.getCellComments(sheet.id, 5, 2)).toMatchObject([{
+      id: "comment-1",
+      resolved: true,
+      replies: [{ id: "reply-1", content: "Reviewed" }]
+    }]);
+    const restored = WorkbookEngine.fromJSON(engine.toJSON());
+    expect(restored.getCellNote(sheet.id, 5, 2)).toBe("Legacy note");
+    expect(restored.getCellComments(sheet.id, 5, 2)[0]?.replies).toHaveLength(1);
+
+    expect(engine.undo()).toBe(true);
+    expect(engine.getCellComments(sheet.id, 5, 2)[0]?.resolved).toBe(false);
+    expect(engine.redo()).toBe(true);
+    expect(engine.getCellComments(sheet.id, 5, 2)[0]?.resolved).toBe(true);
+    expect(events).toEqual(["created:comment-1", "replied:reply-1", "resolved:comment-1:true"]);
+
+    engine.deleteCellComment({ sheetId: sheet.id, row: 5, col: 2, commentId: "comment-1" });
+    expect(engine.getCellComments(sheet.id, 5, 2)).toEqual([]);
+    expect(engine.getCellNote(sheet.id, 5, 2)).toBe("Legacy note");
+  });
+
+  it("creates, updates and removes safe worksheet images transactionally", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const createdEvents: string[] = [];
+    engine.on("image:created", ({ imageId }) => createdEvents.push(imageId));
+
+    engine.createImage({
+      sheetId: sheet.id,
+      image: {
+        id: "image-1",
+        src: "https://example.com/chart.png",
+        alt: "Chart preview",
+        position: { fromCell: "B2", offsetX: 0, offsetY: 0, width: 240, height: 160 }
+      }
+    });
+    expect(engine.getImage(sheet.id, "image-1")).toMatchObject({ alt: "Chart preview", position: { width: 240 } });
+    expect(WorkbookEngine.fromJSON(engine.toJSON()).getImage(sheet.id, "image-1")).toBeDefined();
+
+    engine.updateImage({ sheetId: sheet.id, imageId: "image-1", position: { width: 300 }, state: { locked: true } });
+    expect(engine.getImage(sheet.id, "image-1")).toMatchObject({ position: { width: 300 }, state: { locked: true } });
+    expect(engine.undo()).toBe(true);
+    expect(engine.getImage(sheet.id, "image-1")?.position.width).toBe(240);
+    expect(engine.redo()).toBe(true);
+    expect(engine.getImage(sheet.id, "image-1")?.position.width).toBe(300);
+
+    engine.deleteImage(sheet.id, "image-1");
+    expect(engine.getImages(sheet.id)).toEqual([]);
+    expect(createdEvents).toEqual(["image-1"]);
+    expect(() => engine.createImage({
+      sheetId: sheet.id,
+      image: { src: "javascript:alert(1)", position: { fromCell: "A1", offsetX: 0, offsetY: 0, width: 40, height: 40 } }
+    })).toThrow(/HTTPS or a safe raster data URL/);
+  });
+
+  it("moves and selects images", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const moved = vi.fn();
+    engine.on("image:moved", moved);
+    engine.createImage({
+      sheetId: sheet.id,
+      image: { id: "image-move", src: "https://example.com/a.png", position: { fromCell: "A1", offsetX: 0, offsetY: 0, width: 80, height: 60 } }
+    });
+    engine.selectImage(sheet.id, "image-move");
+    engine.moveImage({
+      sheetId: sheet.id,
+      imageId: "image-move",
+      position: { fromCell: "C3", toCell: "D4", offsetX: 4, offsetY: 6, zIndex: 7 }
+    });
+
+    expect(engine.getImage(sheet.id, "image-move")).toMatchObject({ state: { selected: true }, position: { fromCell: "C3", zIndex: 7 } });
+    expect(moved).toHaveBeenCalledOnce();
+    expect(engine.undo()).toBe(true);
+    expect(engine.getImage(sheet.id, "image-move")?.position.fromCell).toBe("A1");
+  });
+
+  it("persists JSON-only worksheet widgets with undoable CRUD and geometry", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const created = vi.fn();
+    const resized = vi.fn();
+    engine.on("widget:created", created);
+    engine.on("widget:resized", resized);
+
+    engine.createWidget({
+      sheetId: sheet.id,
+      widget: {
+        id: "widget-1",
+        type: "kpi",
+        label: "Revenue KPI",
+        config: { color: "#123456", precision: 2 },
+        data: { value: 42 },
+        position: { fromCell: "B2", offsetX: 0, offsetY: 0, width: 180, height: 100 }
+      }
+    });
+    engine.resizeWidget({ sheetId: sheet.id, widgetId: "widget-1", position: { width: 220, height: 120, toCell: "E7" } });
+
+    expect(engine.getWidget(sheet.id, "widget-1")).toMatchObject({ type: "kpi", data: { value: 42 }, position: { width: 220 } });
+    expect(engine.getImages(sheet.id)).toEqual([]);
+    expect(WorkbookEngine.fromJSON(engine.toJSON()).getWidget(sheet.id, "widget-1")).toBeDefined();
+    expect(created).toHaveBeenCalledOnce();
+    expect(resized).toHaveBeenCalledOnce();
+    expect(engine.undo()).toBe(true);
+    expect(engine.getWidget(sheet.id, "widget-1")?.position.width).toBe(180);
+    expect(engine.redo()).toBe(true);
+    engine.deleteWidget(sheet.id, "widget-1");
+    expect(engine.getWidgets(sheet.id)).toEqual([]);
+
+    expect(() => engine.createWidget({
+      sheetId: sheet.id,
+      widget: {
+        type: "unsafe",
+        config: { handler: (() => undefined) as never },
+        position: { fromCell: "A1", offsetX: 0, offsetY: 0, width: 40, height: 40 }
+      }
+    })).toThrow(/JSON/);
   });
 
   it("rejects cell values and formulas that exceed workbook input limits", () => {
@@ -687,6 +1093,26 @@ describe("WorkbookEngine", () => {
       issue: {
         validator: "starts-with"
       }
+    });
+  });
+
+  it("validates a cell declaratively against another cell", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: 10 });
+    engine.setCellValidation({
+      sheetId: sheet.id,
+      row: 0,
+      col: 1,
+      validation: {
+        rules: [{ type: "cellComparison", reference: { row: 0, col: 0 }, operator: "greaterThan" }]
+      }
+    });
+
+    expect(engine.validateCellValue({ sheetId: sheet.id, row: 0, col: 1, value: 11 }).valid).toBe(true);
+    expect(engine.validateCellValue({ sheetId: sheet.id, row: 0, col: 1, value: 9 })).toMatchObject({
+      valid: false,
+      issue: { ruleType: "cellComparison", code: "CORE_VALIDATION_CELL_COMPARISON" }
     });
   });
 

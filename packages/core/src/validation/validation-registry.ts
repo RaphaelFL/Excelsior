@@ -109,16 +109,38 @@ const parseDate = (value: CellPrimitive): number | undefined => {
   return undefined;
 };
 
+const compareCellValues = (
+  value: CellPrimitive,
+  referenceValue: CellPrimitive,
+  operator: "equals" | "notEquals" | "greaterThan" | "greaterThanOrEqual" | "lessThan" | "lessThanOrEqual"
+): boolean => {
+  if (operator === "equals" || operator === "notEquals") {
+    const equals = value === referenceValue || String(value ?? "") === String(referenceValue ?? "");
+    return operator === "equals" ? equals : !equals;
+  }
+  const numericValue = parseNumber(value);
+  const numericReference = parseNumber(referenceValue);
+  if (numericValue === undefined || numericReference === undefined) {
+    return false;
+  }
+  if (operator === "greaterThan") return numericValue > numericReference;
+  if (operator === "greaterThanOrEqual") return numericValue >= numericReference;
+  if (operator === "lessThan") return numericValue < numericReference;
+  return numericValue <= numericReference;
+};
+
 const buildIssue = (
   ruleType: CellValidationIssue["ruleType"],
   code: string,
   message: string,
-  validator?: string
+  validator?: string,
+  severity?: CellValidationIssue["severity"]
 ): CellValidationIssue => ({
   code,
   message,
   ruleType,
-  validator
+  validator,
+  severity
 });
 
 const shouldSkipRuleForFormula = (
@@ -320,9 +342,25 @@ export class ValidationRegistry {
             { row: input.row, col: input.col }
           );
           break;
+        case "cellComparison": {
+          const reference = input.sheet.cells[`${rule.reference.row}:${rule.reference.col}`];
+          const referenceValue = reference?.computedValue ?? reference?.value ?? null;
+          if (!compareCellValues(input.value, referenceValue, rule.operator)) {
+            issue = buildIssue(
+              "cellComparison",
+              "CORE_VALIDATION_CELL_COMPARISON",
+              rule.message ?? `O valor não atende à comparação com a célula ${rule.reference.row + 1}:${rule.reference.col + 1}.`
+            );
+          }
+          break;
+        }
       }
 
       if (issue) {
+        issue.severity = rule.severity ?? "error";
+        if (issue.severity === "warning") {
+          return { valid: true, issue };
+        }
         return {
           valid: false,
           issue,

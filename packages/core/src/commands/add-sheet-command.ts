@@ -14,6 +14,7 @@ const createSheetModel = (
   conditionalFormats: cloneValue(input?.conditionalFormats ?? []),
   frozenRows: Math.max(0, input?.frozenRows ?? 0),
   frozenColumns: Math.max(0, input?.frozenColumns ?? 0),
+  splitPane: input?.splitPane ? cloneValue(input.splitPane) : undefined,
   columns: cloneValue(input?.columns ?? {}),
   rows: cloneValue(input?.rows ?? {}),
   rowCount: Math.min(input?.rowCount ?? 200, workbook.settings.maxRows),
@@ -22,6 +23,8 @@ const createSheetModel = (
     start: { row: 0, col: 0 },
     end: { row: 0, col: 0 }
   },
+  images: cloneValue(input?.images ?? []),
+  widgets: cloneValue(input?.widgets ?? []),
   metadata: cloneValue(input?.metadata ?? {})
 });
 

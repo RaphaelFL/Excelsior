@@ -16,6 +16,13 @@ export { recalculateWorkbookFormulas } from "./utils/recalculate-formulas";
 export { CellValidationError } from "./validation/cell-validation-error";
 export { SpreadsheetOperationError } from "./errors/spreadsheet-operation-error";
 export { ValidationRegistry } from "./validation/validation-registry";
+export { createCollaborationTransportAdapter } from "./collaboration/transport-adapter";
+export type {
+  CollaborationClientProtocolMessage,
+  CollaborationServerProtocolMessage,
+  CollaborationTransport,
+  CollaborationTransportCallbacks
+} from "./collaboration/transport-adapter";
 export { ClientSideRowModel, InfiniteRowModel, ServerSideRowModel, ViewportRowModel } from "./row-model";
 export type {
   DataAggregateModel,
@@ -39,8 +46,16 @@ export type {
   CellAddress,
   CellBatchUpdate,
   CellBorderStyle,
+  CellComment,
+  CellCommentReply,
   CellKeyedUpsert,
   CellTransactionChange,
+  ClientSideFilterDescriptor,
+  ClientSideFilterOperator,
+  ClientSideFilterType,
+  ClientSideQueryState,
+  ClientSideSortDescriptor,
+  ClientSideSortDirection,
   CellValidationConfig,
   CellValidationContext,
   CellValidationCustomRule,
@@ -50,7 +65,17 @@ export type {
   CellModel,
   CellPrimitive,
   CellRange,
+  CellRichTextSegment,
+  CellRichTextStyle,
   CellStyle,
+  CollaborationAdapter,
+  CollaborationConfig,
+  CollaborationConflictPolicy,
+  CollaborationConnection,
+  CollaborationEnvelope,
+  CollaborationPresence,
+  CollaborationPresenceMessage,
+  CommentAuthor,
   ClipboardPolicy,
   ColumnSchema,
   CommandResult,
@@ -72,8 +97,16 @@ export type {
   RegisteredCellValidator,
   RowSchema,
   SafeCellValidator,
+  SheetSplitPane,
   SheetModel,
   SheetMerge,
+  WorksheetObjectPosition,
+  WorksheetImageObject,
+  WorksheetImageObjectInput,
+  WorksheetWidgetObject,
+  WorksheetWidgetObjectInput,
+  JsonPrimitive,
+  JsonValue,
   SpreadsheetError,
   SpreadsheetEventMap,
   SpreadsheetOperation,

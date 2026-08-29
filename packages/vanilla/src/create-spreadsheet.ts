@@ -5,6 +5,7 @@ import {
   type AutofillOptions,
   type CustomCellEditor,
   type CustomCellRenderer,
+  type DomSpreadsheetRendererOptions,
   type RendererLocalizationOptions
 } from "@excelsior/renderer-dom";
 
@@ -12,6 +13,7 @@ export interface CreateSpreadsheetOptions extends WorkbookConfig {
   onChange?: (operations: SpreadsheetOperation[]) => void;
   cellRenderers?: CustomCellRenderer[];
   cellEditors?: CustomCellEditor[];
+  widgetRenderers?: DomSpreadsheetRendererOptions["widgetRenderers"];
   includeHiddenCellsInClipboard?: boolean;
   autofill?: AutofillOptions;
   localization?: RendererLocalizationOptions;
@@ -37,6 +39,7 @@ export const createSpreadsheet = (
     onChange: options.onChange,
     cellRenderers: options.cellRenderers,
     cellEditors: options.cellEditors,
+    widgetRenderers: options.widgetRenderers,
     includeHiddenCellsInClipboard: options.includeHiddenCellsInClipboard,
     autofill: options.autofill,
     localization: options.localization,

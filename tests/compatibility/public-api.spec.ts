@@ -1,19 +1,8 @@
-import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
-import { createApp, nextTick } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { ServerSideRowModel, ViewportRowModel, WorkbookEngine } from "@excelsior/core";
 import { BasicFormulaEngine } from "@excelsior/formulas";
-import type { GridPlugin } from "@excelsior/core";
-import { Spreadsheet as ReactSpreadsheet } from "@excelsior/react";
+import type { CellRichTextSegment, CellStyle, ClientSideQueryState, GridPlugin, SheetSplitPane } from "@excelsior/core";
 import { createSpreadsheet } from "@excelsior/vanilla";
-import { Spreadsheet as VueSpreadsheet } from "@excelsior/vue";
-
-declare global {
-  var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
-}
-
-globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 describe("public API compatibility", () => {
   const selectPivotOptions = (select: HTMLSelectElement | null, values: string[]) => {
@@ -103,6 +92,43 @@ describe("public API compatibility", () => {
 
     instance.destroy();
     container.remove();
+  });
+
+  it("exposes rich text and overflow through the public core API", () => {
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    const richText: CellRichTextSegment[] = [{ text: "Docs", hyperlink: "https://example.com" }];
+    const overflow: CellStyle["overflow"] = "ellipsis";
+
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: "Docs" });
+    engine.setCellRichText({ sheetId: sheet.id, row: 0, col: 0, richText });
+    engine.setCellStyle({ sheetId: sheet.id, row: 0, col: 0, style: { overflow } });
+
+    expect(engine.getCellRichText(sheet.id, 0, 0)?.[0]).toEqual({ text: "Docs", hyperlink: "https://example.com/" });
+    expect(engine.getCell(sheet.id, 0, 0)?.style?.overflow).toBe("ellipsis");
+  });
+
+  it("exposes serializable client-side multi-column query descriptors", () => {
+    const engine = new WorkbookEngine({ data: [{ rowCount: 2, columnCount: 2 }] });
+    const sheet = engine.getActiveSheet();
+    engine.applyClientSideSortFilter({
+      sheetId: sheet.id,
+      sort: [{ column: 0, direction: "asc" }, { column: 1, direction: "desc" }],
+      filters: [{ column: 1, type: "number", operator: "gte", value: 10 }]
+    });
+    const state: ClientSideQueryState | undefined = engine.getClientSideQuery(sheet.id);
+    expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+
+  it("exposes serializable split pane state through the public core API", () => {
+    const engine = new WorkbookEngine({ data: [{ rowCount: 20, columnCount: 10 }] });
+    const sheet = engine.getActiveSheet();
+    const splitPane: SheetSplitPane = { horizontalRow: 5, verticalColumn: 3 };
+
+    engine.setSplitPane(sheet.id, splitPane);
+
+    expect(engine.getSplitPane(sheet.id)).toEqual(splitPane);
+    expect(JSON.parse(JSON.stringify(engine.toJSON().sheets[0]?.splitPane))).toEqual(splitPane);
   });
 
   it("accepts localization options through the public vanilla wrapper", () => {
@@ -471,43 +497,6 @@ describe("public API compatibility", () => {
     expect(engine.getRemoteRowModelRequest(sheet.id)).toEqual({
       expandedGroupPaths: [["engineering", "active"]]
     });
-  });
-
-  it("mounts the public React wrapper with the documented props contract", async () => {
-    const container = document.createElement("div");
-    container.style.width = "800px";
-    container.style.height = "480px";
-    document.body.append(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(createElement(ReactSpreadsheet, { data: [{ name: "ReactSheet" }] }));
-    });
-
-    expect(container.querySelector(".excelsior-shell")).not.toBeNull();
-
-    await act(async () => {
-      root.unmount();
-    });
-    container.remove();
-  });
-
-  it("mounts the public Vue wrapper with the documented props contract", async () => {
-    const container = document.createElement("div");
-    container.style.width = "800px";
-    container.style.height = "480px";
-    document.body.append(container);
-
-    const app = createApp(VueSpreadsheet, {
-      data: [{ name: "VueSheet" }]
-    });
-    app.mount(container);
-    await nextTick();
-
-    expect(container.querySelector(".excelsior-shell")).not.toBeNull();
-
-    app.unmount();
-    container.remove();
   });
 
   it("exposes the plugin engine through the public core API", () => {

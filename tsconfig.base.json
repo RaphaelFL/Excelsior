@@ -20,8 +20,6 @@
       "@excelsior/devtools": ["packages/devtools/src/index.ts"],
       "@excelsior/formulas": ["packages/formulas/src/index.ts"],
       "@excelsior/renderer-dom": ["packages/renderer-dom/src/index.ts"],
-      "@excelsior/react": ["packages/react/src/index.tsx"],
-      "@excelsior/vue": ["packages/vue/src/index.ts"],
       "@excelsior/xlsx": ["packages/xlsx/src/index.ts"],
       "@excelsior/vanilla": ["packages/vanilla/src/index.ts"]
     }

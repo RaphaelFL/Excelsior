@@ -18,8 +18,6 @@ export default defineConfig({
       "@excelsior/devtools": path.resolve(rootDir, "packages/devtools/src/index.ts"),
       "@excelsior/formulas": path.resolve(rootDir, "packages/formulas/src/index.ts"),
       "@excelsior/renderer-dom": path.resolve(rootDir, "packages/renderer-dom/src/index.ts"),
-      "@excelsior/react": path.resolve(rootDir, "packages/react/src/index.tsx"),
-      "@excelsior/vue": path.resolve(rootDir, "packages/vue/src/index.ts"),
       "@excelsior/xlsx": path.resolve(rootDir, "packages/xlsx/src/index.ts"),
       "@excelsior/vanilla": path.resolve(rootDir, "packages/vanilla/src/index.ts")
     }

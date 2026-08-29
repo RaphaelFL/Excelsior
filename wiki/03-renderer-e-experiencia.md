@@ -98,7 +98,7 @@ Isso inclui:
 
 O renderer DOM permite customizacao segura por estrutura de texto controlada.
 
-Voce pode passar `cellRenderers` e `cellEditors` pelo wrapper vanilla, React ou Vue.
+Voce pode passar `cellRenderers` e `cellEditors` pelo wrapper vanilla.
 
 Exemplo conceitual:
 
@@ -208,10 +208,6 @@ Quando a sheet usa `InfiniteRowModel` ou `ServerSideRowModel`, a toolbar da colu
 - expand/collapse de grupos
 - pivot remoto por coluna
 - agregacoes `sum`, `avg`, `min`, `max`, `count`
-
-## Wrappers React e Vue
-
-`@excelsior/react` e `@excelsior/vue` sao wrappers finos sobre o contrato do vanilla. Em ambos os casos voce passa praticamente o mesmo conjunto de props/opcoes.
 
 ## Proximo passo
 
