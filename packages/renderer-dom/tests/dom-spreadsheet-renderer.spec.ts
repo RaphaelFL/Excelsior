@@ -4252,6 +4252,7 @@ describe("DomSpreadsheetRenderer", () => {
     document.body.append(container);
     const engine = new WorkbookEngine({ data: [{ rowCount: 4, columnCount: 4, cells: {
       "0:0": { value: "Excelsior" },
+      "0:1": { value: "Valor" },
       "1:0": { value: "nome,sobrenome" }
     } }] }, new BasicFormulaEngine());
     const renderer = new DomSpreadsheetRenderer(container, engine);
@@ -4276,28 +4277,58 @@ describe("DomSpreadsheetRenderer", () => {
           left: { color: "#334155", style: "thin" }
         }
       });
-      expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0'] .excelsior-cell-content")?.style.transform).toBe("rotate(45deg)");
+      const rotatedContent = container.querySelector<HTMLElement>("[data-row='0'][data-col='0'] .excelsior-cell-content");
+      expect(rotatedContent?.style.transform).toBe("rotate(45deg)");
+      expect(rotatedContent?.classList.contains("is-rotated")).toBe(true);
 
+      container.querySelector<HTMLButtonElement>("[data-action='find-replace']")!.click();
+      const findPanel = container.querySelector<HTMLElement>(".excelsior-find-replace")!;
+      expect(findPanel.hidden).toBe(false);
       container.querySelector<HTMLButtonElement>("[data-action='insert-link']")!.click();
+      const toolPanel = container.querySelector<HTMLElement>("[data-toolbar-tool-panel]")!;
+      expect(findPanel.hidden).toBe(true);
+      expect(toolPanel.classList.contains("excelsior-find-replace")).toBe(false);
+      expect(toolPanel.parentElement?.classList.contains("excelsior-formula-bar")).toBe(true);
+      const toolMode = container.querySelector<HTMLSelectElement>("[data-toolbar-tool-mode]")!;
+      expect(Array.from(toolMode.options, (option) => option.textContent)).toEqual([
+        "A — Excelsior", "B — Valor", "C", "D"
+      ]);
+      toolMode.value = "1";
       const toolValue = container.querySelector<HTMLInputElement>("[data-toolbar-tool-value]")!;
       toolValue.value = "https://example.com";
       container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
-      expect(engine.getCellRichText(sheetId, 0, 0)).toEqual([
-        { text: "Excelsior", hyperlink: "https://example.com/" }
+      expect(engine.getCellRichText(sheetId, 0, 1)).toEqual([
+        { text: "Valor", hyperlink: "https://example.com/" }
       ]);
+
+      container.querySelector<HTMLButtonElement>("[data-action='split-column']")!.click();
+      container.querySelector<HTMLButtonElement>("[data-action='find-replace']")!.click();
+      expect(toolPanel.hidden).toBe(true);
+      container.querySelector<HTMLButtonElement>("[data-find-action='close']")!.click();
 
       engine.selectRange({ sheetId, rowStart: 1, rowEnd: 1, colStart: 0, colEnd: 0 });
       renderer.render();
       container.querySelector<HTMLButtonElement>("[data-action='split-column']")!.click();
+      toolMode.value = "0";
       toolValue.value = ",";
       container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
       expect(engine.getCell(sheetId, 1, 0)?.value).toBe("nome");
       expect(engine.getCell(sheetId, 1, 1)?.value).toBe("sobrenome");
 
+      engine.selectRange({ sheetId, rowStart: 2, rowEnd: 2, colStart: 2, colEnd: 2 });
+      renderer.render();
+      container.querySelector<HTMLButtonElement>("[data-action='split-column']")!.click();
+      toolMode.value = "2";
+      toolValue.value = "teste,159";
+      container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+      expect(engine.getCell(sheetId, 2, 2)?.value).toBe("teste");
+      expect(engine.getCell(sheetId, 2, 3)?.value).toBe("159");
+
       const initialWidth = Number.parseFloat(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.style.width);
       container.querySelector<HTMLButtonElement>("[data-action='zoom-in']")!.click();
       const zoomedWidth = Number.parseFloat(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.style.width);
       expect(zoomedWidth).toBeGreaterThan(initialWidth);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='zoom-reset']")?.textContent).toContain("110%");
       expect(container.querySelector<HTMLButtonElement>("[data-action='zoom-reset']")?.title).toBe("Zoom 110%");
 
       container.querySelector<HTMLButtonElement>("[data-action='export-svg']")!.click();
@@ -4313,6 +4344,51 @@ describe("DomSpreadsheetRenderer", () => {
     }
   });
 
+  it("resizes and auto-fits columns and rows from their header edges", () => {
+    const container = document.createElement("div");
+    container.style.width = "900px";
+    container.style.height = "300px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({ data: [{ rowCount: 4, columnCount: 4, cells: {
+      "0:0": { value: "Uma descrição longa que deve aumentar a largura da coluna" },
+      "1:1": { value: "Texto rotacionado", style: { rotation: 45 } }
+    } }] }, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheetId = engine.getActiveSheet().id;
+
+    try {
+      const resizeColumn = vi.spyOn(engine, "resizeColumn");
+      const columnHandle = container.querySelector<HTMLElement>("[data-column-resize='0']");
+      dispatchMouse(columnHandle, "mousedown", { clientX: 120 });
+      dispatchMouse(window, "mousemove", { clientX: 170 });
+      expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")?.style.width).toBe("170px");
+      expect(resizeColumn).not.toHaveBeenCalled();
+      dispatchMouse(window, "mouseup", { clientX: 170 });
+      expect(resizeColumn).toHaveBeenCalledTimes(1);
+      expect(engine.getActiveSheet().columns[0]?.width).toBe(170);
+
+      const resizeRow = vi.spyOn(engine, "resizeRow");
+      const rowHandle = container.querySelector<HTMLElement>("[data-row-resize='0']");
+      dispatchMouse(rowHandle, "mousedown", { clientY: 28 });
+      dispatchMouse(window, "mousemove", { clientY: 48 });
+      expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")?.style.height).toBe("48px");
+      expect(resizeRow).not.toHaveBeenCalled();
+      dispatchMouse(window, "mouseup", { clientY: 48 });
+      expect(resizeRow).toHaveBeenCalledTimes(1);
+      expect(engine.getActiveSheet().rows[0]?.height).toBe(48);
+
+      dispatchMouse(container.querySelector("[data-column-resize='0']"), "dblclick", {});
+      expect(engine.getActiveSheet().columns[0]?.width).toBeGreaterThan(300);
+
+      dispatchMouse(container.querySelector("[data-row-resize='1']"), "dblclick", {});
+      expect(engine.getActiveSheet().rows[1]?.height).toBeGreaterThan(28);
+      expect(engine.getCell(sheetId, 0, 0)?.value).toContain("descrição longa");
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
   it("configures validation and conditional formatting and locates special cells", () => {
     const container = document.createElement("div");
     container.style.width = "800px";
@@ -4320,6 +4396,7 @@ describe("DomSpreadsheetRenderer", () => {
     document.body.append(container);
     const engine = new WorkbookEngine({ data: [{ rowCount: 4, columnCount: 4, cells: {
       "0:0": { value: 20 },
+      "1:1": { value: "=A1*2" },
       "2:2": { value: "=SUM(A1:A2)" }
     } }] }, new BasicFormulaEngine());
     const renderer = new DomSpreadsheetRenderer(container, engine);
@@ -4345,8 +4422,10 @@ describe("DomSpreadsheetRenderer", () => {
       expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")?.style.backgroundColor).toBe("rgb(254, 240, 138)");
 
       container.querySelector<HTMLButtonElement>("[data-action='find-special']")!.click();
-  toolMode.value = "formulas";
-  container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+        toolMode.value = "formulas";
+        toolMode.dispatchEvent(new Event("change", { bubbles: true }));
+        toolValue.value = "SUM";
+        container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
       expect(engine.getActiveSheet().selection).toEqual({
         start: { row: 2, col: 2 },
         end: { row: 2, col: 2 }

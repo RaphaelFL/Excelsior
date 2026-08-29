@@ -1233,6 +1233,15 @@ export class DomSpreadsheetRenderer {
 
   private sheetZoom = 1;
 
+  private headerResize?: {
+    axis: "column" | "row";
+    index: number;
+    sheetId: string;
+    startPosition: number;
+    startSize: number;
+    currentSize: number;
+  };
+
   private readonly splitPaneLayer = document.createElement("div");
 
   private readonly editor = document.createElement("input");
@@ -3113,25 +3122,36 @@ export class DomSpreadsheetRenderer {
     });
   }
 
-  private insertLink(hyperlink: string): void {
+  private insertLink(hyperlink: string, targetColumn: number): void {
     const sheet = this.engine.getActiveSheet();
     const address = this.getActiveAddress(sheet);
-    const current = this.engine.getDisplayValue(sheet.id, address.row, address.col);
+    const column = Number.isInteger(targetColumn) && targetColumn >= 0 && targetColumn < sheet.columnCount
+      ? targetColumn
+      : address.col;
+    const current = this.engine.getDisplayValue(sheet.id, address.row, column);
     if (!hyperlink.trim()) return;
     this.engine.setCellRichText({
       sheetId: sheet.id,
       row: address.row,
-      col: address.col,
+      col: column,
       richText: [{ text: current || hyperlink, hyperlink: hyperlink.trim() }]
     });
   }
 
-  private splitSelectedColumn(separator: string): void {
-    if (!separator) return;
+  private splitSelectedColumn(separatorInput: string, selectedColumn: number): void {
+    if (!separatorInput) return;
     const sheet = this.engine.getActiveSheet();
-    const sourceColumn = sheet.selection.start.col;
+    const sourceColumn = Number.isInteger(selectedColumn) && selectedColumn >= 0 && selectedColumn < sheet.columnCount
+      ? selectedColumn
+      : sheet.selection.start.col;
+    const sampleSeparator = separatorInput.length > 1
+      ? [",", ";", "|", "\t"].find((candidate) => separatorInput.includes(candidate))
+      : undefined;
+    const usesSample = sampleSeparator !== undefined && sheet.selection.start.row === sheet.selection.end.row;
+    const separator = usesSample ? sampleSeparator : separatorInput;
     for (let row = sheet.selection.start.row; row <= sheet.selection.end.row; row += 1) {
-      const parts = String(this.getCellPrimitiveValue(sheet.id, row, sourceColumn) ?? "").split(separator);
+      const sourceValue = usesSample ? separatorInput : String(this.getCellPrimitiveValue(sheet.id, row, sourceColumn) ?? "");
+      const parts = sourceValue.split(separator);
       parts.forEach((part, index) => {
         if (sourceColumn + index < sheet.columnCount) {
           this.engine.setCellValue({ sheetId: sheet.id, row, col: sourceColumn + index, value: part.trim() });
@@ -3157,6 +3177,129 @@ export class DomSpreadsheetRenderer {
     this.sheetZoom = delta === undefined ? 1 : Math.max(0.5, Math.min(2, Math.round((this.sheetZoom + delta) * 10) / 10));
     this.render();
   }
+
+  private autoFitColumn(col: number): void {
+    const sheet = this.engine.getActiveSheet();
+    let width = 40;
+    for (let row = 0; row < sheet.rowCount; row += 1) {
+      const value = this.getRenderedCellDisplayValue(sheet.id, row, col);
+      const fontSize = this.getCellStyle(sheet, row, col)?.fontSize ?? 12;
+      width = Math.max(width, value.length * fontSize * 0.62 + 20);
+    }
+    this.engine.resizeColumn(sheet.id, col, Math.min(600, Math.ceil(width)));
+  }
+
+  private autoFitRow(row: number): void {
+    const sheet = this.engine.getActiveSheet();
+    let height = 20;
+    for (let col = 0; col < sheet.columnCount; col += 1) {
+      const value = this.getRenderedCellDisplayValue(sheet.id, row, col);
+      const style = this.getCellStyle(sheet, row, col);
+      const fontSize = style?.fontSize ?? 12;
+      const lineHeight = fontSize * 1.35;
+      const availableWidth = Math.max(1, this.getColumnWidth(sheet, col) / this.sheetZoom - 16);
+      const textWidth = value.length * fontSize * 0.62;
+      const lineCount = style?.wrap ? Math.max(1, Math.ceil(textWidth / availableWidth)) : 1;
+      const rotation = Math.abs(style?.rotation ?? 0) * Math.PI / 180;
+      const rotatedHeight = Math.abs(Math.sin(rotation)) * textWidth + Math.abs(Math.cos(rotation)) * lineHeight;
+      height = Math.max(height, style?.rotation ? rotatedHeight + 12 : lineCount * lineHeight + 12);
+    }
+    this.engine.resizeRow(sheet.id, row, Math.min(400, Math.ceil(height)));
+  }
+
+  private readonly handleHeaderResizeMouseDown = (event: MouseEvent): void => {
+    const element = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-column-resize], [data-row-resize]");
+    if (!element) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const column = element.dataset.columnResize;
+    const row = element.dataset.rowResize;
+    const sheet = this.engine.getActiveSheet();
+    const axis = column !== undefined ? "column" : "row";
+    const index = Number(column ?? row);
+    this.headerResize = {
+      axis,
+      index,
+      sheetId: sheet.id,
+      startPosition: axis === "column" ? event.clientX : event.clientY,
+      startSize: axis === "column"
+        ? this.getColumnWidth(sheet, index) / this.sheetZoom
+        : this.getRowHeight(sheet, index) / this.sheetZoom,
+      currentSize: axis === "column"
+        ? this.getColumnWidth(sheet, index) / this.sheetZoom
+        : this.getRowHeight(sheet, index) / this.sheetZoom
+    };
+    this.root.classList.add(axis === "column" ? "is-resizing-column" : "is-resizing-row");
+    window.addEventListener("mousemove", this.handleHeaderResizeMouseMove);
+    window.addEventListener("mouseup", this.handleHeaderResizeMouseUp, { once: true });
+  };
+
+  private previewHeaderResize(state: NonNullable<DomSpreadsheetRenderer["headerResize"]>, size: number): void {
+    const delta = (size - state.currentSize) * this.sheetZoom;
+    if (!delta) return;
+    state.currentSize = size;
+
+    if (state.axis === "column") {
+      const header = this.chrome.querySelector<HTMLElement>(`[data-column-header-col='${state.index}']`);
+      if (header) header.style.width = `${Math.max(0, Number.parseFloat(header.style.width) + delta)}px`;
+      for (const cell of this.cellsLayer.querySelectorAll<HTMLElement>("[data-row][data-col]")) {
+        const start = Number(cell.dataset.col);
+        const span = Number(cell.getAttribute("aria-colspan") ?? 1);
+        if (start <= state.index && state.index < start + span) {
+          cell.style.width = `${Math.max(0, Number.parseFloat(cell.style.width) + delta)}px`;
+        } else if (start > state.index) {
+          cell.style.left = `${Number.parseFloat(cell.style.left) + delta}px`;
+        }
+      }
+      this.surface.style.width = `${Math.max(0, Number.parseFloat(this.surface.style.width) + delta)}px`;
+      return;
+    }
+
+    for (const header of this.rowHeaders.querySelectorAll<HTMLElement>("[data-row-header-row]")) {
+      const row = Number(header.dataset.rowHeaderRow);
+      if (row === state.index) header.style.height = `${Math.max(0, Number.parseFloat(header.style.height) + delta)}px`;
+      else if (row > state.index) header.style.top = `${Number.parseFloat(header.style.top) + delta}px`;
+    }
+    for (const cell of this.cellsLayer.querySelectorAll<HTMLElement>("[data-row][data-col]")) {
+      const start = Number(cell.dataset.row);
+      const span = Number(cell.getAttribute("aria-rowspan") ?? 1);
+      if (start <= state.index && state.index < start + span) {
+        cell.style.height = `${Math.max(0, Number.parseFloat(cell.style.height) + delta)}px`;
+      } else if (start > state.index) {
+        cell.style.top = `${Number.parseFloat(cell.style.top) + delta}px`;
+      }
+    }
+    this.surface.style.height = `${Math.max(0, Number.parseFloat(this.surface.style.height) + delta)}px`;
+  }
+
+  private readonly handleHeaderResizeMouseMove = (event: MouseEvent): void => {
+    const state = this.headerResize;
+    if (!state) return;
+    const position = state.axis === "column" ? event.clientX : event.clientY;
+    const minimum = state.axis === "column" ? 40 : 20;
+    const maximum = state.axis === "column" ? 600 : 400;
+    const size = Math.max(minimum, Math.min(maximum, state.startSize + (position - state.startPosition) / this.sheetZoom));
+    this.previewHeaderResize(state, Math.round(size));
+  };
+
+  private readonly handleHeaderResizeMouseUp = (): void => {
+    const state = this.headerResize;
+    this.headerResize = undefined;
+    window.removeEventListener("mousemove", this.handleHeaderResizeMouseMove);
+    this.root.classList.remove("is-resizing-column", "is-resizing-row");
+    if (!state || state.currentSize === state.startSize) return;
+    if (state.axis === "column") this.engine.resizeColumn(state.sheetId, state.index, state.currentSize);
+    else this.engine.resizeRow(state.sheetId, state.index, state.currentSize);
+  };
+
+  private readonly handleHeaderResizeDoubleClick = (event: MouseEvent): void => {
+    const element = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-column-resize], [data-row-resize]");
+    if (!element) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (element.dataset.columnResize !== undefined) this.autoFitColumn(Number(element.dataset.columnResize));
+    else this.autoFitRow(Number(element.dataset.rowResize));
+  };
 
   private configureSelectionValidation(modeInput: string, rawValue: string): void {
     const mode = modeInput.trim().toLocaleLowerCase();
@@ -3231,8 +3374,9 @@ export class DomSpreadsheetRenderer {
     }
   }
 
-  private findSpecialCell(modeInput: string): void {
+  private findSpecialCell(modeInput: string, queryInput = ""): void {
     const mode = modeInput.trim().toLocaleLowerCase();
+    const query = queryInput.trim().toLocaleLowerCase();
     if (!mode) return;
     const sheet = this.engine.getActiveSheet();
     for (let row = 0; row < sheet.rowCount; row += 1) {
@@ -3240,7 +3384,7 @@ export class DomSpreadsheetRenderer {
         const cell = this.engine.getCell(sheet.id, row, col);
         const value = cell?.value;
         const matches = mode === "fórmulas" || mode === "formulas"
-          ? typeof value === "string" && value.startsWith("=")
+          ? typeof value === "string" && value.startsWith("=") && (!query || value.toLocaleLowerCase().includes(query))
           : mode === "vazias"
             ? value === undefined || value === null || value === ""
             : mode === "erros"
@@ -3261,37 +3405,57 @@ export class DomSpreadsheetRenderer {
   }
 
   private openToolbarTool(tool: NonNullable<DomSpreadsheetRenderer["activeToolbarTool"]>): void {
+    const sheet = this.engine.getActiveSheet();
+    const activeColumn = this.getActiveAddress(sheet).col;
+    const columnModes = Array.from({ length: sheet.columnCount }, (_, col) => {
+      const label = columnIndexToLabel(col);
+      const header = this.engine.getDisplayValue(sheet.id, 0, col).trim();
+      return [String(col), header ? `${label} — ${header}` : label] as [string, string];
+    });
     const definitions = {
-      link: { title: "Inserir link", modes: [] as Array<[string, string]>, valueLabel: "Endereço HTTPS ou mailto", value: "https://" },
-      split: { title: "Dividir coluna", modes: [] as Array<[string, string]>, valueLabel: "Separador", value: "," },
+      link: { title: "Inserir link", modeLabel: "Destino", modes: columnModes, valueLabel: "Endereço HTTPS ou mailto", value: "https://" },
+      split: { title: "Dividir coluna", modeLabel: "Coluna", modes: columnModes, valueLabel: "Separador ou texto", value: "," },
       validation: {
         title: "Validação de dados",
+        modeLabel: "Opção",
         modes: [["lista", "Lista"], ["numero", "Número"], ["data", "Data"], ["checkbox", "Checkbox"], ["remover", "Remover"]] as Array<[string, string]>,
         valueLabel: "Valores separados por vírgula",
         value: "Sim,Não"
       },
       conditional: {
         title: "Formatação condicional",
+        modeLabel: "Opção",
         modes: [["maior", "Maior que"], ["texto", "Contém texto"], ["duplicados", "Duplicados"], ["escala", "Escala de cores"], ["remover", "Remover"]] as Array<[string, string]>,
         valueLabel: "Valor",
         value: "0"
       },
       "find-special": {
         title: "Localizar células especiais",
+        modeLabel: "Opção",
         modes: [["formulas", "Fórmulas"], ["vazias", "Vazias"], ["erros", "Erros"], ["constantes", "Constantes"]] as Array<[string, string]>,
-        valueLabel: "",
+        valueLabel: "Buscar fórmula (opcional)",
         value: ""
       }
     } as const;
     const definition = definitions[tool];
+    this.cancelFindReplaceSearch();
+    this.findReplaceState.open = false;
+    this.findReplaceState.error = undefined;
+    this.findReplaceState.matches = [];
+    this.findReplaceState.activeIndex = -1;
+    this.findReplacePanel.hidden = true;
     this.activeToolbarTool = tool;
     this.toolbarToolTitle.textContent = definition.title;
+    this.toolbarToolModeLabel.textContent = definition.modeLabel;
     this.toolbarToolModeSelect.replaceChildren(...definition.modes.map(([value, label]) => {
       const option = document.createElement("option");
       option.value = value;
       option.textContent = label;
       return option;
     }));
+    if (tool === "link" || tool === "split") {
+      this.toolbarToolModeSelect.value = String(activeColumn);
+    }
     this.toolbarToolModeField.hidden = definition.modes.length === 0;
     this.toolbarToolValueLabel.textContent = definition.valueLabel;
     this.toolbarToolValueInput.value = definition.value;
@@ -3304,7 +3468,8 @@ export class DomSpreadsheetRenderer {
     const mode = this.toolbarToolModeSelect.value;
     const needsValue = this.activeToolbarTool === "link" || this.activeToolbarTool === "split"
       || (this.activeToolbarTool === "validation" && mode === "lista")
-      || (this.activeToolbarTool === "conditional" && (mode === "maior" || mode === "texto"));
+      || (this.activeToolbarTool === "conditional" && (mode === "maior" || mode === "texto"))
+      || (this.activeToolbarTool === "find-special" && mode === "formulas");
     this.toolbarToolValueField.hidden = !needsValue;
     if (this.activeToolbarTool === "conditional") {
       this.toolbarToolValueLabel.textContent = mode === "texto" ? "Texto" : "Valor";
@@ -3322,11 +3487,11 @@ export class DomSpreadsheetRenderer {
     const mode = this.toolbarToolModeSelect.value;
     const value = this.toolbarToolValueInput.value;
     this.toolbarToolPanel.hidden = true;
-    if (tool === "link") this.insertLink(value);
-    else if (tool === "split") this.splitSelectedColumn(value);
+    if (tool === "link") this.insertLink(value, Number(mode));
+    else if (tool === "split") this.splitSelectedColumn(value, Number(mode));
     else if (tool === "validation") this.configureSelectionValidation(mode, value);
     else if (tool === "conditional") this.configureConditionalFormatting(mode, value);
-    else if (tool === "find-special") this.findSpecialCell(mode);
+    else if (tool === "find-special") this.findSpecialCell(mode, value);
     this.activeToolbarTool = undefined;
     this.render();
     this.focus();
@@ -3621,6 +3786,8 @@ export class DomSpreadsheetRenderer {
 
   private openFindReplacePanel(): void {
     this.pivotPanelState.open = false;
+    this.toolbarToolPanel.hidden = true;
+    this.activeToolbarTool = undefined;
     if (!this.findReplaceState.open) {
       this.findReplaceState.open = true;
       this.findReplaceQueryInput.value = this.findReplaceState.query;
@@ -3894,7 +4061,7 @@ export class DomSpreadsheetRenderer {
     this.notePanel.className = "excelsior-note-panel";
     this.pivotPanel.className = "excelsior-find-replace excelsior-pivot-panel";
     this.chartEditPanel.className = "excelsior-find-replace excelsior-chart-edit-panel";
-    this.toolbarToolPanel.className = "excelsior-find-replace excelsior-toolbar-tool-panel";
+    this.toolbarToolPanel.className = "excelsior-toolbar-tool-panel";
     this.viewport.className = "excelsior-viewport";
     this.rowHeaders.className = "excelsior-row-headers";
     this.viewport.tabIndex = 0;
@@ -4439,10 +4606,11 @@ export class DomSpreadsheetRenderer {
       this.formulaInput,
       this.statusMessage,
       this.findReplacePanel,
-      this.pivotPanel
+      this.pivotPanel,
+      this.toolbarToolPanel
     );
     this.root.append(this.chrome, this.formulaBar, this.activeCellAnnouncement, this.gridPanel, this.sheetTabs, this.imageFileInput, this.geoJsonFileInput, this.chartLayoutImageFileInput);
-    this.gridPanel.append(this.viewport, this.rowHeaders, this.notePanel, this.chartEditPanel, this.chartInsertPreviewPanel, this.toolbarToolPanel);
+    this.gridPanel.append(this.viewport, this.rowHeaders, this.notePanel, this.chartEditPanel, this.chartInsertPreviewPanel);
     this.viewport.append(this.surface);
     this.container.replaceChildren(this.root);
 
@@ -4481,7 +4649,13 @@ export class DomSpreadsheetRenderer {
     this.chartLayoutImageFileInput.removeEventListener("change", this.handleChartLayoutImageFileChange);
     this.chrome.removeEventListener("click", this.handleColumnHeaderClick);
     this.chrome.removeEventListener("keydown", this.handleColumnHeaderKeyDown);
+    this.chrome.removeEventListener("mousedown", this.handleHeaderResizeMouseDown);
+    this.chrome.removeEventListener("dblclick", this.handleHeaderResizeDoubleClick);
     this.rowHeaders.removeEventListener("click", this.handleRowHeaderClick);
+    this.rowHeaders.removeEventListener("mousedown", this.handleHeaderResizeMouseDown);
+    this.rowHeaders.removeEventListener("dblclick", this.handleHeaderResizeDoubleClick);
+    window.removeEventListener("mousemove", this.handleHeaderResizeMouseMove);
+    window.removeEventListener("mouseup", this.handleHeaderResizeMouseUp);
     this.sheetTabs.removeEventListener("click", this.handleSheetTabClick);
     this.sheetTabs.removeEventListener("keydown", this.handleSheetTabsKeyDown);
     this.formulaInput.removeEventListener("keydown", this.handleFormulaInputKeyDown);
@@ -4653,7 +4827,11 @@ export class DomSpreadsheetRenderer {
     this.colorPickerHandle.addEventListener("mousedown", this.handleColorPickerMouseDown);
     this.chrome.addEventListener("click", this.handleColumnHeaderClick);
     this.chrome.addEventListener("keydown", this.handleColumnHeaderKeyDown);
+    this.chrome.addEventListener("mousedown", this.handleHeaderResizeMouseDown);
+    this.chrome.addEventListener("dblclick", this.handleHeaderResizeDoubleClick);
     this.rowHeaders.addEventListener("click", this.handleRowHeaderClick);
+    this.rowHeaders.addEventListener("mousedown", this.handleHeaderResizeMouseDown);
+    this.rowHeaders.addEventListener("dblclick", this.handleHeaderResizeDoubleClick);
     this.sheetTabs.addEventListener("click", this.handleSheetTabClick);
     this.sheetTabs.addEventListener("keydown", this.handleSheetTabsKeyDown);
     this.formulaInput.addEventListener("keydown", this.handleFormulaInputKeyDown);
@@ -6970,6 +7148,12 @@ export class DomSpreadsheetRenderer {
         header.style.transform = `translateX(-${this.viewport.scrollLeft}px)`;
       }
       header.textContent = columnIndexToLabel(col);
+      const resizeHandle = document.createElement("span");
+      resizeHandle.className = "excelsior-column-resize-handle";
+      resizeHandle.dataset.columnResize = String(col);
+      resizeHandle.setAttribute("aria-label", `Redimensionar coluna ${columnIndexToLabel(col)}; clique duplo para ajustar ao conteúdo`);
+      resizeHandle.title = "Arraste para redimensionar; clique duplo para ajustar ao conteúdo";
+      header.append(resizeHandle);
       columnStrip.append(header);
     }
     const headerRow = document.createElement("div");
@@ -7010,6 +7194,12 @@ export class DomSpreadsheetRenderer {
       header.style.top = `${this.getFrozenAdjustedTop(sheet.id, rowOffsets, row) - this.viewport.scrollTop}px`;
       header.style.height = `${this.getRowHeight(sheet, row)}px`;
       header.textContent = String(row + 1);
+      const resizeHandle = document.createElement("span");
+      resizeHandle.className = "excelsior-row-resize-handle";
+      resizeHandle.dataset.rowResize = String(row);
+      resizeHandle.setAttribute("aria-label", `Redimensionar linha ${row + 1}; clique duplo para ajustar ao conteúdo`);
+      resizeHandle.title = "Arraste para redimensionar; clique duplo para ajustar ao conteúdo";
+      header.append(resizeHandle);
       fragment.append(header);
     }
 
@@ -7063,7 +7253,7 @@ export class DomSpreadsheetRenderer {
       "export-svg": "SVG",
       "zoom-in": "+",
       "zoom-out": "−",
-      "zoom-reset": "100%",
+      "zoom-reset": `${Math.round(this.sheetZoom * 100)}%`,
       "data-validation": "✓",
       "conditional-formatting": "CF",
       "find-special": "⌕!",
@@ -7762,6 +7952,7 @@ export class DomSpreadsheetRenderer {
         this.renderCellContent(cell, sheet.id, cellRange.start.row, cellRange.start.col, rowModelRowsByIndex.get(cellRange.start.row));
         const content = cell.querySelector<HTMLElement>(".excelsior-cell-content");
         if (content && cellStyle?.rotation) {
+          content.classList.add("is-rotated");
           content.style.transform = `rotate(${cellStyle.rotation}deg)`;
         }
 
