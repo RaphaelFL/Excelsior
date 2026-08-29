@@ -2659,25 +2659,36 @@ export class DomSpreadsheetRenderer {
     });
   }
 
-  private insertLink(hyperlink: string): void {
+  private insertLink(hyperlink: string, targetColumn: number): void {
     const sheet = this.engine.getActiveSheet();
     const address = this.getActiveAddress(sheet);
-    const current = this.engine.getDisplayValue(sheet.id, address.row, address.col);
+    const column = Number.isInteger(targetColumn) && targetColumn >= 0 && targetColumn < sheet.columnCount
+      ? targetColumn
+      : address.col;
+    const current = this.engine.getDisplayValue(sheet.id, address.row, column);
     if (!hyperlink.trim()) return;
     this.engine.setCellRichText({
       sheetId: sheet.id,
       row: address.row,
-      col: address.col,
+      col: column,
       richText: [{ text: current || hyperlink, hyperlink: hyperlink.trim() }]
     });
   }
 
-  private splitSelectedColumn(separator: string): void {
-    if (!separator) return;
+  private splitSelectedColumn(separatorInput: string, selectedColumn: number): void {
+    if (!separatorInput) return;
     const sheet = this.engine.getActiveSheet();
-    const sourceColumn = sheet.selection.start.col;
+    const sourceColumn = Number.isInteger(selectedColumn) && selectedColumn >= 0 && selectedColumn < sheet.columnCount
+      ? selectedColumn
+      : sheet.selection.start.col;
+    const sampleSeparator = separatorInput.length > 1
+      ? [",", ";", "|", "\t"].find((candidate) => separatorInput.includes(candidate))
+      : undefined;
+    const usesSample = sampleSeparator !== undefined && sheet.selection.start.row === sheet.selection.end.row;
+    const separator = usesSample ? sampleSeparator : separatorInput;
     for (let row = sheet.selection.start.row; row <= sheet.selection.end.row; row += 1) {
-      const parts = String(this.getCellPrimitiveValue(sheet.id, row, sourceColumn) ?? "").split(separator);
+      const sourceValue = usesSample ? separatorInput : String(this.getCellPrimitiveValue(sheet.id, row, sourceColumn) ?? "");
+      const parts = sourceValue.split(separator);
       parts.forEach((part, index) => {
         if (sourceColumn + index < sheet.columnCount) {
           this.engine.setCellValue({ sheetId: sheet.id, row, col: sourceColumn + index, value: part.trim() });
@@ -2777,8 +2788,9 @@ export class DomSpreadsheetRenderer {
     }
   }
 
-  private findSpecialCell(modeInput: string): void {
+  private findSpecialCell(modeInput: string, queryInput = ""): void {
     const mode = modeInput.trim().toLocaleLowerCase();
+    const query = queryInput.trim().toLocaleLowerCase();
     if (!mode) return;
     const sheet = this.engine.getActiveSheet();
     for (let row = 0; row < sheet.rowCount; row += 1) {
@@ -2786,7 +2798,7 @@ export class DomSpreadsheetRenderer {
         const cell = this.engine.getCell(sheet.id, row, col);
         const value = cell?.value;
         const matches = mode === "fórmulas" || mode === "formulas"
-          ? typeof value === "string" && value.startsWith("=")
+          ? typeof value === "string" && value.startsWith("=") && (!query || value.toLocaleLowerCase().includes(query))
           : mode === "vazias"
             ? value === undefined || value === null || value === ""
             : mode === "erros"
@@ -2807,37 +2819,53 @@ export class DomSpreadsheetRenderer {
   }
 
   private openToolbarTool(tool: NonNullable<DomSpreadsheetRenderer["activeToolbarTool"]>): void {
+    const sheet = this.engine.getActiveSheet();
+    const activeColumn = this.getActiveAddress(sheet).col;
+    const columnModes = Array.from({ length: sheet.columnCount }, (_, col) => {
+      const label = columnIndexToLabel(col);
+      const header = this.engine.getDisplayValue(sheet.id, 0, col).trim();
+      return [String(col), header ? `${label} — ${header}` : label] as [string, string];
+    });
     const definitions = {
-      link: { title: "Inserir link", modes: [] as Array<[string, string]>, valueLabel: "Endereço HTTPS ou mailto", value: "https://" },
-      split: { title: "Dividir coluna", modes: [] as Array<[string, string]>, valueLabel: "Separador", value: "," },
+      link: { title: "Inserir link", modeLabel: "Destino", modes: columnModes, valueLabel: "Endereço HTTPS ou mailto", value: "https://" },
+      split: { title: "Dividir coluna", modeLabel: "Coluna", modes: columnModes, valueLabel: "Separador ou texto", value: "," },
       validation: {
         title: "Validação de dados",
+        modeLabel: "Opção",
         modes: [["lista", "Lista"], ["numero", "Número"], ["data", "Data"], ["checkbox", "Checkbox"], ["remover", "Remover"]] as Array<[string, string]>,
         valueLabel: "Valores separados por vírgula",
         value: "Sim,Não"
       },
       conditional: {
         title: "Formatação condicional",
+        modeLabel: "Opção",
         modes: [["maior", "Maior que"], ["texto", "Contém texto"], ["duplicados", "Duplicados"], ["escala", "Escala de cores"], ["remover", "Remover"]] as Array<[string, string]>,
         valueLabel: "Valor",
         value: "0"
       },
       "find-special": {
         title: "Localizar células especiais",
+        modeLabel: "Opção",
         modes: [["formulas", "Fórmulas"], ["vazias", "Vazias"], ["erros", "Erros"], ["constantes", "Constantes"]] as Array<[string, string]>,
-        valueLabel: "",
+        valueLabel: "Buscar fórmula (opcional)",
         value: ""
       }
     } as const;
     const definition = definitions[tool];
+    this.cancelFindReplaceSearch();
+    this.findReplaceState.open = false;
     this.activeToolbarTool = tool;
     this.toolbarToolTitle.textContent = definition.title;
+    this.toolbarToolModeLabel.textContent = definition.modeLabel;
     this.toolbarToolModeSelect.replaceChildren(...definition.modes.map(([value, label]) => {
       const option = document.createElement("option");
       option.value = value;
       option.textContent = label;
       return option;
     }));
+    if (tool === "link" || tool === "split") {
+      this.toolbarToolModeSelect.value = String(activeColumn);
+    }
     this.toolbarToolModeField.hidden = definition.modes.length === 0;
     this.toolbarToolValueLabel.textContent = definition.valueLabel;
     this.toolbarToolValueInput.value = definition.value;
@@ -2850,7 +2878,8 @@ export class DomSpreadsheetRenderer {
     const mode = this.toolbarToolModeSelect.value;
     const needsValue = this.activeToolbarTool === "link" || this.activeToolbarTool === "split"
       || (this.activeToolbarTool === "validation" && mode === "lista")
-      || (this.activeToolbarTool === "conditional" && (mode === "maior" || mode === "texto"));
+      || (this.activeToolbarTool === "conditional" && (mode === "maior" || mode === "texto"))
+      || (this.activeToolbarTool === "find-special" && mode === "formulas");
     this.toolbarToolValueField.hidden = !needsValue;
     if (this.activeToolbarTool === "conditional") {
       this.toolbarToolValueLabel.textContent = mode === "texto" ? "Texto" : "Valor";
@@ -2868,11 +2897,11 @@ export class DomSpreadsheetRenderer {
     const mode = this.toolbarToolModeSelect.value;
     const value = this.toolbarToolValueInput.value;
     this.toolbarToolPanel.hidden = true;
-    if (tool === "link") this.insertLink(value);
-    else if (tool === "split") this.splitSelectedColumn(value);
+    if (tool === "link") this.insertLink(value, Number(mode));
+    else if (tool === "split") this.splitSelectedColumn(value, Number(mode));
     else if (tool === "validation") this.configureSelectionValidation(mode, value);
     else if (tool === "conditional") this.configureConditionalFormatting(mode, value);
-    else if (tool === "find-special") this.findSpecialCell(mode);
+    else if (tool === "find-special") this.findSpecialCell(mode, value);
     this.activeToolbarTool = undefined;
     this.render();
     this.focus();
@@ -3167,6 +3196,8 @@ export class DomSpreadsheetRenderer {
 
   private openFindReplacePanel(): void {
     this.pivotPanelState.open = false;
+    this.toolbarToolPanel.hidden = true;
+    this.activeToolbarTool = undefined;
     if (!this.findReplaceState.open) {
       this.findReplaceState.open = true;
       this.findReplaceQueryInput.value = this.findReplaceState.query;
@@ -3429,7 +3460,7 @@ export class DomSpreadsheetRenderer {
     this.findReplacePanel.className = "excelsior-find-replace";
     this.notePanel.className = "excelsior-note-panel";
     this.pivotPanel.className = "excelsior-find-replace excelsior-pivot-panel";
-    this.toolbarToolPanel.className = "excelsior-find-replace excelsior-toolbar-tool-panel";
+    this.toolbarToolPanel.className = "excelsior-toolbar-tool-panel";
     this.viewport.className = "excelsior-viewport";
     this.rowHeaders.className = "excelsior-row-headers";
     this.viewport.tabIndex = 0;
@@ -3672,10 +3703,11 @@ export class DomSpreadsheetRenderer {
       this.formulaInput,
       this.statusMessage,
       this.findReplacePanel,
-      this.pivotPanel
+      this.pivotPanel,
+      this.toolbarToolPanel
     );
     this.root.append(this.chrome, this.formulaBar, this.activeCellAnnouncement, this.gridPanel, this.sheetTabs, this.imageFileInput);
-    this.gridPanel.append(this.viewport, this.rowHeaders, this.notePanel, this.toolbarToolPanel);
+    this.gridPanel.append(this.viewport, this.rowHeaders, this.notePanel);
     this.viewport.append(this.surface);
     this.container.replaceChildren(this.root);
 

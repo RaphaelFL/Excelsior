@@ -54,7 +54,12 @@
 
 .excelsior-formula-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   gap: 8px;
   padding: 6px 8px;
   background: #f8fafb;
@@ -122,6 +127,7 @@
 .excelsior-find-replace[hidden],
 .excelsior-pivot-panel[hidden],
 .excelsior-note-panel[hidden],
+.excelsior-toolbar-tool-panel[hidden],
 .excelsior-chart-edit-panel[hidden],
 .excelsior-chart-preview-panel[hidden] {
   display: none !important;
@@ -1405,20 +1411,36 @@
 }
 
 .excelsior-toolbar-tool-panel {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 9;
-  grid-template-columns: minmax(180px, 1fr);
-  width: min(calc(100% - 24px), 380px);
+  display: grid;
+  grid-template-columns: auto minmax(150px, 220px) minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  box-sizing: border-box;
+  flex: 1 1 100%;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--excelsior-line);
-  border-radius: 8px;
-  background: var(--excelsior-surface);
-  box-shadow: 0 12px 30px rgb(15 23 42 / 18%);
+  margin: 0;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--excelsior-line);
+  background: #f8fafb;
+}
+
+.excelsior-toolbar-tool-panel > [hidden] {
+  display: none !important;
+}
+
+.excelsior-toolbar-tool-panel:has(> .excelsior-find-replace-field[hidden]) {
+  grid-template-columns: auto minmax(150px, 1fr) auto;
 }
 
 .excelsior-toolbar-tool-title {
   font-size: 14px;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .excelsior-toolbar-tool-panel {
+    grid-template-columns: 1fr;
+  }
 }

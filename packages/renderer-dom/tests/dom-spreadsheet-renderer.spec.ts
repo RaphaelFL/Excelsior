@@ -2976,6 +2976,7 @@ describe("DomSpreadsheetRenderer", () => {
     document.body.append(container);
     const engine = new WorkbookEngine({ data: [{ rowCount: 4, columnCount: 4, cells: {
       "0:0": { value: "Excelsior" },
+      "0:1": { value: "Website" },
       "1:0": { value: "nome,sobrenome" }
     } }] }, new BasicFormulaEngine());
     const renderer = new DomSpreadsheetRenderer(container, engine);
@@ -3003,20 +3004,37 @@ describe("DomSpreadsheetRenderer", () => {
       expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0'] .excelsior-cell-content")?.style.transform).toBe("rotate(45deg)");
 
       container.querySelector<HTMLButtonElement>("[data-action='insert-link']")!.click();
+      const toolMode = container.querySelector<HTMLSelectElement>("[data-toolbar-tool-mode]")!;
+      expect(Array.from(toolMode.options, (option) => option.textContent)).toEqual([
+        "A — Excelsior",
+        "B — Website",
+        "C",
+        "D"
+      ]);
+      toolMode.value = "1";
       const toolValue = container.querySelector<HTMLInputElement>("[data-toolbar-tool-value]")!;
       toolValue.value = "https://example.com";
       container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
-      expect(engine.getCellRichText(sheetId, 0, 0)).toEqual([
-        { text: "Excelsior", hyperlink: "https://example.com/" }
+      expect(engine.getCellRichText(sheetId, 0, 1)).toEqual([
+        { text: "Website", hyperlink: "https://example.com/" }
       ]);
 
       engine.selectRange({ sheetId, rowStart: 1, rowEnd: 1, colStart: 0, colEnd: 0 });
       renderer.render();
       container.querySelector<HTMLButtonElement>("[data-action='split-column']")!.click();
+      expect(toolMode.value).toBe("0");
       toolValue.value = ",";
       container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
       expect(engine.getCell(sheetId, 1, 0)?.value).toBe("nome");
       expect(engine.getCell(sheetId, 1, 1)?.value).toBe("sobrenome");
+
+      engine.selectRange({ sheetId, rowStart: 2, rowEnd: 2, colStart: 0, colEnd: 0 });
+      renderer.render();
+      container.querySelector<HTMLButtonElement>("[data-action='split-column']")!.click();
+      toolValue.value = "teste,159";
+      container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+      expect(engine.getCell(sheetId, 2, 0)?.value).toBe("teste");
+      expect(engine.getCell(sheetId, 2, 1)?.value).toBe("159");
 
       const initialWidth = Number.parseFloat(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.style.width);
       container.querySelector<HTMLButtonElement>("[data-action='zoom-in']")!.click();
@@ -3044,12 +3062,15 @@ describe("DomSpreadsheetRenderer", () => {
     document.body.append(container);
     const engine = new WorkbookEngine({ data: [{ rowCount: 4, columnCount: 4, cells: {
       "0:0": { value: 20 },
+      "1:1": { value: "=A1*2" },
       "2:2": { value: "=SUM(A1:A2)" }
     } }] }, new BasicFormulaEngine());
     const renderer = new DomSpreadsheetRenderer(container, engine);
     const sheetId = engine.getActiveSheet().id;
     try {
       container.querySelector<HTMLButtonElement>("[data-action='data-validation']")!.click();
+      const toolPanel = container.querySelector<HTMLElement>(".excelsior-toolbar-tool-panel")!;
+      expect(toolPanel.classList.contains("excelsior-find-replace")).toBe(false);
       const toolMode = container.querySelector<HTMLSelectElement>("[data-toolbar-tool-mode]")!;
       const toolValue = container.querySelector<HTMLInputElement>("[data-toolbar-tool-value]")!;
       toolMode.value = "lista";
@@ -3069,8 +3090,10 @@ describe("DomSpreadsheetRenderer", () => {
       expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")?.style.backgroundColor).toBe("rgb(254, 240, 138)");
 
       container.querySelector<HTMLButtonElement>("[data-action='find-special']")!.click();
-  toolMode.value = "formulas";
-  container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+        toolMode.value = "formulas";
+        toolMode.dispatchEvent(new Event("input", { bubbles: true }));
+        toolValue.value = "SUM";
+        container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
       expect(engine.getActiveSheet().selection).toEqual({
         start: { row: 2, col: 2 },
         end: { row: 2, col: 2 }
