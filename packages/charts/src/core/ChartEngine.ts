@@ -29,6 +29,7 @@ import { LegendController } from "../interactions/LegendController";
 import { ModebarController } from "../interactions/ModebarController";
 import { ZoomPanController, type InteractionMode } from "../interactions/ZoomPanController";
 import { SelectionController, type SelectionShape } from "../interactions/SelectionController";
+import { RangeNavigationController } from "../interactions/RangeNavigationController";
 import { RenderScheduler } from "./RenderScheduler";
 import { buildCartesianDomains } from "./cartesian-domain";
 import type { FramePlaybackOptions } from "../types/PublicApi";
@@ -48,6 +49,7 @@ export class ChartEngine {
   private readonly zoomPanController: ZoomPanController;
   private readonly selectionController: SelectionController;
   private readonly modebarController: ModebarController;
+  private readonly rangeNavigationController: RangeNavigationController;
   private readonly resizeObserver?: ResizeObserver;
   private lastComputedLayout: ComputedLayout | null = null;
   private interactionMode: InteractionMode = "zoom";
@@ -90,6 +92,9 @@ export class ChartEngine {
     this.selectionController = new SelectionController({
       onSelection: (points, shape) => this.applyPointSelection(shape, points, false),
       onCleared: () => this.applyPointSelection("rect", [], false)
+    });
+    this.rangeNavigationController = new RangeNavigationController({
+      onRangeChanged: (startFraction, endFraction) => this.applyRangeNavigation(startFraction, endFraction)
     });
     this.modebarController = new ModebarController({
       onZoomIn: () => this.applyZoom(0.84),
@@ -168,6 +173,7 @@ export class ChartEngine {
     this.zoomPanController.destroy();
     this.selectionController.destroy();
     this.modebarController.destroy();
+    this.rangeNavigationController.destroy();
     this.renderer.destroy();
     this.accessibilityTable?.remove();
     this.accessibilityTable = null;
@@ -376,6 +382,8 @@ export class ChartEngine {
       this.modebarController.destroy();
     }
 
+    this.rangeNavigationController.mount(this.container, figure.layout.xAxis);
+
     this.syncAccessibility(figure);
   }
 
@@ -432,6 +440,21 @@ export class ChartEngine {
     const nextYMin = yAnchor - (yAnchor - domains.y[0]) * factor;
     const nextYMax = yAnchor + (domains.y[1] - yAnchor) * factor;
     this.applyAxisRanges(nextXMin, nextXMax, nextYMin, nextYMax, "axis:zoomed", interaction.subplotIndex);
+  }
+
+  private applyRangeNavigation(startFraction: number, endFraction: number): void {
+    const figure = this.figureManager.getFigure();
+    const domains = buildCartesianDomains(figure);
+    if (!domains) {
+      return;
+    }
+    const width = domains.x[1] - domains.x[0];
+    if (width <= 0) {
+      return;
+    }
+    const xMin = domains.x[0] + width * Math.min(1, Math.max(0, startFraction));
+    const xMax = domains.x[0] + width * Math.min(1, Math.max(0, endFraction));
+    this.applyAxisRanges(xMin, xMax, domains.y[0], domains.y[1], "axis:zoomed", 0);
   }
 
   private applyAxisZoom(axis: "x" | "y", factor: number, anchorClientX?: number, anchorClientY?: number): void {

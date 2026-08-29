@@ -59,6 +59,8 @@ Fornecer uma engine de visualizacao modular, tipada e independente de framework,
 - Hover com tooltip, clique e selecao.
 - Zoom por roda, zoom por eixo, zoom retangular e pan.
 - Toggle de legenda, modebar e fullscreen.
+- Range selector e range slider configuráveis para navegação no eixo X.
+- Posicionamento defensivo de tooltip para não cobrir a modebar.
 - Drilldown interativo em `sunburst` e `treemap`.
 
 ### 5.5 Exportacao e interoperabilidade
@@ -105,7 +107,7 @@ Fornecer uma engine de visualizacao modular, tipada e independente de framework,
 - Em `parallel-categories`, filtro visual por match exato da linha selecionada.
 - Em `multicategory`, parser textual por delimitadores (sem estrutura multi-nivel nativa por arrays aninhados).
 - Em `sankey`, ciclos sao tratados como entrada invalida.
-- Na integracao com spreadsheet, tipos em desenvolvimento na toolbar ficam desabilitados e sinalizados por tooltip.
+- Todos os tipos atualmente expostos na toolbar da spreadsheet possuem implementação habilitada.
 - Exportacao XLSX usa fallback de placeholder visual quando o grafico nao possui range/série valida para exportacao estruturada.
 - Importacao XLSX preserva metadados principais (titulo, legenda, eixos, range e ancora), mas recursos proprietarios avancados de Office continuam em `unsupportedFeatures`.
 - A visualizacao embutida na sheet usa pausa de render para graficos fora da viewport; nesses casos e exibido placeholder leve ate o grafico voltar a area visivel.

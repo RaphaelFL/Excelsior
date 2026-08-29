@@ -19,7 +19,13 @@ import { CellValidationError } from "./validation/cell-validation-error";
 import type {
   CellAddress,
   CellBatchUpdate,
+  CellComment,
+  CellCommentReply,
+  ClientSideFilterDescriptor,
+  ClientSideQueryState,
+  ClientSideSortDescriptor,
   CellPrimitive,
+  CellRichTextSegment,
   CellTransactionChange,
   CellModel,
   CellRange,
@@ -28,6 +34,11 @@ import type {
   CellValidationResult,
   ChartPosition,
   ChartRangeBinding,
+  CollaborationAdapter,
+  CollaborationConflictPolicy,
+  CollaborationEnvelope,
+  CollaborationPresence,
+  CollaborationPresenceMessage,
   ColumnSchema,
   ConditionalFormattingRule,
   FormulaEngine,
@@ -40,10 +51,17 @@ import type {
   RegisteredCellValidator,
   RowSchema,
   SafeCellValidator,
+  SheetSplitPane,
+  SheetModel,
   SheetMerge,
   WorksheetChartObject,
   WorksheetChartObjectInput,
   WorksheetChartType,
+  WorksheetImageObject,
+  WorksheetImageObjectInput,
+  WorksheetWidgetObject,
+  WorksheetWidgetObjectInput,
+  JsonValue,
   SpreadsheetEventMap,
   SpreadsheetOperation,
   WorkbookConfig,
@@ -99,12 +117,61 @@ const rangesOverlap = (left: CellRange, right: CellRange): boolean =>
 const areGroupPathsEqual = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((segment, index) => segment === right[index]);
 
+const CLIENT_SIDE_QUERY_METADATA_KEY = "clientSideQuery";
+
+const toComparableNumber = (value: CellPrimitive, type: "number" | "date"): number | undefined => {
+  if (type === "date" && typeof value === "string") {
+    const timestamp = Date.parse(value);
+    return Number.isNaN(timestamp) ? undefined : timestamp;
+  }
+
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+};
+
+const matchesClientSideFilter = (value: CellPrimitive, descriptor: ClientSideFilterDescriptor): boolean => {
+  if (descriptor.type === "text") {
+    const candidate = String(value ?? "");
+    const expected = String(descriptor.value);
+    const left = descriptor.caseSensitive ? candidate : candidate.toLocaleLowerCase();
+    const right = descriptor.caseSensitive ? expected : expected.toLocaleLowerCase();
+    if (descriptor.operator === "contains") return left.includes(right);
+    if (descriptor.operator === "startsWith") return left.startsWith(right);
+    if (descriptor.operator === "equals") return left === right;
+    return false;
+  }
+
+  const candidate = toComparableNumber(value, descriptor.type);
+  const expected = toComparableNumber(descriptor.value, descriptor.type);
+  if (candidate === undefined || expected === undefined) return false;
+  if (descriptor.operator === "equals") return candidate === expected;
+  if (descriptor.operator === "gt") return candidate > expected;
+  if (descriptor.operator === "gte") return candidate >= expected;
+  if (descriptor.operator === "lt") return candidate < expected;
+  if (descriptor.operator === "lte") return candidate <= expected;
+  if (descriptor.operator === "between") {
+    const upper = descriptor.valueTo === undefined ? undefined : toComparableNumber(descriptor.valueTo, descriptor.type);
+    return upper !== undefined && candidate >= Math.min(expected, upper) && candidate <= Math.max(expected, upper);
+  }
+  return false;
+};
+
+const compareClientSideValues = (left: CellPrimitive, right: CellPrimitive): number => {
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" });
+};
+
 const DEFAULT_SETTINGS: WorkbookSettings = {
   maxRows: 1000,
   maxColumns: 100,
   maxCellLength: 5000,
   maxFormulaLength: 2048,
   maxPasteCells: 10000,
+  maxImageSourceLength: 2_000_000,
+  maxWidgetDataLength: 100_000,
   maxRecalcCells: 10000,
   maxPivotSourceRows: 5000,
   rowHeight: 28,
@@ -124,6 +191,78 @@ const createRangeError = (message: string): Error => {
   const error = new Error(message);
   error.name = "RangeError";
   return error;
+};
+
+const normalizeRichTextColor = (color: unknown): string | undefined => {
+  if (typeof color !== "string" || color.length > 128 || /[\u0000-\u001f]/.test(color)) {
+    return undefined;
+  }
+
+  const trimmed = color.trim();
+  return /^(?:#[\da-f]{3,8}|[a-z]+|(?:rgb|hsl)a?\([\d.% ,/+\-]+\))$/i.test(trimmed) ? trimmed : undefined;
+};
+
+const normalizeRichTextHyperlink = (hyperlink: unknown): string | undefined => {
+  if (typeof hyperlink !== "string" || !hyperlink || /[\s\u007f]/.test(hyperlink)) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(hyperlink);
+    if (url.protocol === "https:") {
+      return url.href;
+    }
+    if (url.protocol === "mailto:" && url.pathname.includes("@")) {
+      return url.href;
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+};
+
+const normalizeRichTextSegments = (segments: CellRichTextSegment[], maxLength: number): CellRichTextSegment[] => {
+  if (!Array.isArray(segments)) {
+    throw createCoreOperationError("CORE_CELL_RICH_TEXT_INVALID", "Cell rich text must be an array of segments.");
+  }
+
+  let totalLength = 0;
+  return segments.map((segment) => {
+    if (!segment || typeof segment.text !== "string") {
+      throw createCoreOperationError("CORE_CELL_RICH_TEXT_INVALID", "Each rich text segment must contain text.");
+    }
+    totalLength += segment.text.length;
+    if (totalLength > maxLength) {
+      throw createCoreOperationError("CORE_CELL_RICH_TEXT_MAX_LENGTH", "Cell rich text exceeds the configured maximum length.", {
+        maxLength
+      });
+    }
+
+    const hyperlink = segment.hyperlink === undefined ? undefined : normalizeRichTextHyperlink(segment.hyperlink);
+    if (segment.hyperlink !== undefined && hyperlink === undefined) {
+      throw createCoreOperationError("CORE_CELL_RICH_TEXT_LINK_INVALID", "Rich text hyperlinks must use HTTPS or mailto.");
+    }
+    const color = segment.style?.color === undefined ? undefined : normalizeRichTextColor(segment.style.color);
+    if (segment.style?.color !== undefined && color === undefined) {
+      throw createCoreOperationError("CORE_CELL_RICH_TEXT_COLOR_INVALID", "Rich text color is not supported.");
+    }
+
+    const style = segment.style
+      ? {
+          ...(segment.style.bold === true ? { bold: true } : {}),
+          ...(segment.style.italic === true ? { italic: true } : {}),
+          ...(segment.style.underline === true ? { underline: true } : {}),
+          ...(segment.style.strike === true ? { strike: true } : {}),
+          ...(color ? { color } : {})
+        }
+      : undefined;
+    return {
+      text: segment.text,
+      ...(style && Object.keys(style).length ? { style } : {}),
+      ...(hyperlink ? { hyperlink } : {})
+    };
+  });
 };
 
 const clonePivotInput = (input: PivotSheetInput): PivotSheetInput => ({
@@ -189,6 +328,17 @@ const isNoOpCellWrite = (previousCell: CellModel | undefined, value: CellPrimiti
     : previousCell.formula === undefined && previousCell.value === value;
 };
 
+interface CollaborationClock {
+  sequence: number;
+  clientId: string;
+}
+
+const isNewerCollaborationClock = (next: CollaborationClock, current?: CollaborationClock): boolean =>
+  !current || next.sequence > current.sequence || (next.sequence === current.sequence && next.clientId > current.clientId);
+
+const getCollaborationOperationKey = (operation: SpreadsheetOperation): string =>
+  `${operation.id}:${JSON.stringify(operation.path)}`;
+
 const parseCellKey = (key: string): CellAddress | undefined => {
   const match = /^(\d+):(\d+)$/.exec(key);
   if (!match) {
@@ -247,12 +397,15 @@ const createWorkbook = (config: WorkbookConfig): WorkbookModel => {
     conditionalFormats: cloneValue(sheetInput.conditionalFormats ?? []),
     frozenRows: Math.max(0, sheetInput.frozenRows ?? 0),
     frozenColumns: Math.max(0, sheetInput.frozenColumns ?? 0),
+    splitPane: sheetInput.splitPane ? cloneValue(sheetInput.splitPane) : undefined,
     columns: cloneValue(sheetInput.columns ?? {}),
     rows: cloneValue(sheetInput.rows ?? {}),
     rowCount: Math.min(sheetInput.rowCount ?? 200, settings.maxRows),
     columnCount: Math.min(sheetInput.columnCount ?? 26, settings.maxColumns),
     selection: createDefaultSelection(),
     charts: cloneValue(sheetInput.charts ?? []),
+    images: cloneValue(sheetInput.images ?? []),
+    widgets: cloneValue(sheetInput.widgets ?? []),
     metadata: cloneValue(sheetInput.metadata ?? {})
   }));
 
@@ -280,9 +433,13 @@ const normalizeWorkbookSnapshot = (snapshot: WorkbookModel): WorkbookModel => {
     sheet.conditionalFormats ??= [];
     sheet.frozenRows ??= 0;
     sheet.frozenColumns ??= 0;
+    if (sheet.splitPane && sheet.splitPane.horizontalRow === undefined && sheet.splitPane.verticalColumn === undefined) {
+      delete sheet.splitPane;
+    }
     sheet.columns ??= {};
     sheet.rows ??= {};
     sheet.charts ??= [];
+    sheet.images ??= [];
     sheet.metadata ??= {};
   }
 
@@ -319,6 +476,30 @@ export class WorkbookEngine {
 
   private readonly invalidatedDerivedPivotSheets = new Set<string>();
 
+  private readonly collaborationAdapter?: CollaborationAdapter;
+
+  private readonly collaborationClientId?: string;
+
+  private readonly collaborationEnvelopeIds = new Set<string>();
+
+  private readonly collaborationOperationClocks = new Map<string, CollaborationClock>();
+
+  private readonly collaborationPresences = new Map<string, CollaborationPresence>();
+
+  private readonly collaborationPresenceClocks = new Map<string, CollaborationClock>();
+
+  private readonly collaborationPresenceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  private readonly collaborationConflictPolicy: CollaborationConflictPolicy;
+
+  private readonly collaborationPresenceTtlMs: number;
+
+  private collaborationSequence = 0;
+
+  private collaborationPresenceSequence = 0;
+
+  private applyingRemoteOperations = false;
+
   private displayValueCacheRevision = -1;
 
   private readonly displayValueCache = new Map<string, string>();
@@ -341,6 +522,10 @@ export class WorkbookEngine {
     );
     this.pluginManager = new PluginManager(this);
     this.pivotModule = config.pivotModule === false ? undefined : (config.pivotModule ?? defaultPivotModule);
+    this.collaborationAdapter = config.collaboration?.adapter;
+    this.collaborationClientId = config.collaboration ? (config.collaboration.clientId ?? createId("client")) : undefined;
+    this.collaborationConflictPolicy = config.collaboration?.conflictPolicy ?? "last-write-wins";
+    this.collaborationPresenceTtlMs = Math.max(1, config.collaboration?.presenceTtlMs ?? 30_000);
     this.events.on("command:completed", ({ sheetId, commandType }) => {
       if (!sheetId || commandType === "SelectRangeCommand" || this.disposed) {
         return;
@@ -348,6 +533,90 @@ export class WorkbookEngine {
 
       this.handleDerivedPivotSourceMutation(sheetId);
     });
+    this.events.on("command:completed", ({ sheetId, operations }) => {
+      if (!sheetId || !operations.some((operation) => operation.path[0] === "splitPane")) {
+        return;
+      }
+
+      this.events.emit("split-pane:changed", {
+        timestamp: Date.now(),
+        workbookId: this.getSnapshot().id,
+        sheetId,
+        splitPane: this.getSplitPane(sheetId)
+      });
+    });
+    this.events.on("command:completed", ({ sheetId, operations }) => {
+      if (!this.collaborationAdapter || !this.collaborationClientId || this.applyingRemoteOperations || !operations.length) {
+        return;
+      }
+      const envelope: CollaborationEnvelope = {
+        id: `${this.collaborationClientId}:${++this.collaborationSequence}`,
+        workbookId: workbook.id,
+        clientId: this.collaborationClientId,
+        sequence: this.collaborationSequence,
+        timestamp: Date.now(),
+        sheetId,
+        operations: cloneValue(operations)
+      };
+      for (const operation of operations) {
+        this.collaborationOperationClocks.set(getCollaborationOperationKey(operation), {
+          sequence: envelope.sequence,
+          clientId: envelope.clientId
+        });
+      }
+      this.collaborationEnvelopeIds.add(envelope.id);
+      void Promise.resolve(this.collaborationAdapter.send(envelope)).catch((error: unknown) => {
+        this.emitCollaborationError("send", error);
+      });
+    });
+    if (this.collaborationAdapter && this.collaborationClientId) {
+      this.events.emit("collaboration:status", {
+        timestamp: Date.now(),
+        workbookId: workbook.id,
+        clientId: this.collaborationClientId,
+        status: "connecting"
+      });
+      void Promise.resolve(
+        this.collaborationAdapter.connect({
+          workbookId: workbook.id,
+          clientId: this.collaborationClientId,
+          receive: (envelope) => {
+            this.applyCollaborationEnvelope(envelope);
+          },
+          receivePresence: (message) => {
+            this.applyCollaborationPresenceMessage(message);
+          },
+          receiveError: (error) => {
+            this.emitCollaborationError("receive", error);
+          }
+        })
+      ).then(() => {
+        if (!this.disposed) {
+          this.events.emit("collaboration:status", {
+            timestamp: Date.now(),
+            workbookId: workbook.id,
+            clientId: this.collaborationClientId!,
+            status: "connected"
+          });
+          void Promise.resolve(this.collaborationAdapter?.getPresence?.(workbook.id) ?? []).then((presences) => {
+            for (const presence of presences) {
+              this.applyCollaborationPresenceMessage({
+                type: "presence:update",
+                workbookId: workbook.id,
+                clientId: presence.clientId,
+                sequence: presence.sequence,
+                timestamp: presence.updatedAt,
+                presence
+              });
+            }
+          }).catch((error: unknown) => {
+            this.emitCollaborationError("presence", error);
+          });
+        }
+      }).catch((error: unknown) => {
+        this.emitCollaborationError("connect", error);
+      });
+    }
     this.events.emit("engine:created", {
       timestamp: Date.now(),
       workbookId: workbook.id
@@ -365,6 +634,200 @@ export class WorkbookEngine {
     listener: (payload: SpreadsheetEventMap[TKey]) => void
   ): () => void {
     return this.events.on(eventName, listener);
+  }
+
+  private emitCollaborationError(
+    phase: "connect" | "send" | "receive" | "presence" | "disconnect",
+    error: unknown
+  ): void {
+    if (!this.collaborationClientId) {
+      return;
+    }
+    this.events.emit("collaboration:error", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      clientId: this.collaborationClientId,
+      phase,
+      message: error instanceof Error ? error.message : "Unknown collaboration error."
+    });
+    this.events.emit("collaboration:status", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      clientId: this.collaborationClientId,
+      status: "error"
+    });
+  }
+
+  applyCollaborationEnvelope(envelope: CollaborationEnvelope): boolean {
+    if (this.disposed || this.collaborationEnvelopeIds.has(envelope.id)) {
+      return false;
+    }
+    const workbook = this.getSnapshot();
+    if (envelope.workbookId !== workbook.id || !envelope.operations.length) {
+      this.emitCollaborationError("receive", new Error("Collaboration envelope does not match this workbook."));
+      return false;
+    }
+    const anchorSheetId = envelope.sheetId && workbook.sheets.some((sheet) => sheet.id === envelope.sheetId)
+      ? envelope.sheetId
+      : workbook.activeSheetId;
+    this.collaborationEnvelopeIds.add(envelope.id);
+    const clock = { sequence: envelope.sequence, clientId: envelope.clientId };
+    const operations = envelope.operations.filter((operation) =>
+      isNewerCollaborationClock(clock, this.collaborationOperationClocks.get(getCollaborationOperationKey(operation)))
+    );
+    if (!operations.length) {
+      return false;
+    }
+    this.applyingRemoteOperations = true;
+    try {
+      this.applyBatchOperations({ anchorSheetId, operations: cloneValue(operations) });
+    } catch (error) {
+      this.collaborationEnvelopeIds.delete(envelope.id);
+      this.emitCollaborationError("receive", error);
+      return false;
+    } finally {
+      this.applyingRemoteOperations = false;
+    }
+    for (const operation of operations) {
+      this.collaborationOperationClocks.set(getCollaborationOperationKey(operation), clock);
+    }
+    this.events.emit("collaboration:operationsApplied", {
+      timestamp: Date.now(),
+      workbookId: workbook.id,
+      clientId: envelope.clientId,
+      envelopeId: envelope.id,
+      operationCount: operations.length
+    });
+    return true;
+  }
+
+  getCollaborationConflictPolicy(): CollaborationConflictPolicy {
+    return this.collaborationConflictPolicy;
+  }
+
+  private expireCollaborationPresences(now = Date.now()): void {
+    for (const [clientId, presence] of this.collaborationPresences) {
+      if (presence.expiresAt > now) {
+        continue;
+      }
+      this.collaborationPresences.delete(clientId);
+      const timer = this.collaborationPresenceTimers.get(clientId);
+      if (timer) {
+        clearTimeout(timer);
+        this.collaborationPresenceTimers.delete(clientId);
+      }
+      this.events.emit("collaboration:presenceRemoved", {
+        timestamp: now,
+        workbookId: this.getWorkbookState().id,
+        clientId,
+        reason: "expired"
+      });
+    }
+  }
+
+  private applyCollaborationPresenceMessage(message: CollaborationPresenceMessage): boolean {
+    if (message.workbookId !== this.getWorkbookState().id) {
+      this.emitCollaborationError("presence", new Error("Collaboration presence does not match this workbook."));
+      return false;
+    }
+    const clock = { sequence: message.sequence, clientId: message.clientId };
+    if (!isNewerCollaborationClock(clock, this.collaborationPresenceClocks.get(message.clientId))) {
+      return false;
+    }
+    this.collaborationPresenceClocks.set(message.clientId, clock);
+    if (message.type === "presence:remove") {
+      const removed = this.collaborationPresences.delete(message.clientId);
+      const timer = this.collaborationPresenceTimers.get(message.clientId);
+      if (timer) {
+        clearTimeout(timer);
+        this.collaborationPresenceTimers.delete(message.clientId);
+      }
+      if (removed) {
+        this.events.emit("collaboration:presenceRemoved", {
+          timestamp: Date.now(),
+          workbookId: message.workbookId,
+          clientId: message.clientId,
+          reason: "removed"
+        });
+      }
+      return removed;
+    }
+    const presence: CollaborationPresence = {
+      ...cloneValue(message.presence),
+      clientId: message.clientId,
+      sequence: message.sequence
+    };
+    this.collaborationPresences.set(message.clientId, presence);
+    const previousTimer = this.collaborationPresenceTimers.get(message.clientId);
+    if (previousTimer) {
+      clearTimeout(previousTimer);
+    }
+    const timer = setTimeout(() => {
+      this.expireCollaborationPresences();
+    }, Math.max(0, presence.expiresAt - Date.now()));
+    this.collaborationPresenceTimers.set(message.clientId, timer);
+    this.events.emit("collaboration:presenceChanged", {
+      timestamp: Date.now(),
+      workbookId: message.workbookId,
+      presence: cloneValue(presence)
+    });
+    return true;
+  }
+
+  getPresence(clientId: string): CollaborationPresence | undefined {
+    this.expireCollaborationPresences();
+    const presence = this.collaborationPresences.get(clientId);
+    return presence ? cloneValue(presence) : undefined;
+  }
+
+  getPresences(): CollaborationPresence[] {
+    this.expireCollaborationPresences();
+    return [...this.collaborationPresences.values()].map((presence) => cloneValue(presence));
+  }
+
+  updatePresence(input: Omit<CollaborationPresence, "clientId" | "sequence" | "updatedAt" | "expiresAt">): CollaborationPresence {
+    if (!this.collaborationAdapter || !this.collaborationClientId) {
+      throw createCoreOperationError("CORE_COLLABORATION_REQUIRED", "Collaboration must be configured to update presence.");
+    }
+    const now = Date.now();
+    const presence: CollaborationPresence = {
+      ...cloneValue(input),
+      clientId: this.collaborationClientId,
+      sequence: ++this.collaborationPresenceSequence,
+      updatedAt: now,
+      expiresAt: now + this.collaborationPresenceTtlMs
+    };
+    const message: Extract<CollaborationPresenceMessage, { type: "presence:update" }> = {
+      type: "presence:update",
+      workbookId: this.getWorkbookState().id,
+      clientId: presence.clientId,
+      sequence: presence.sequence,
+      timestamp: now,
+      presence
+    };
+    this.applyCollaborationPresenceMessage(message);
+    void Promise.resolve(this.collaborationAdapter.updatePresence?.(message)).catch((error: unknown) => {
+      this.emitCollaborationError("presence", error);
+    });
+    return cloneValue(presence);
+  }
+
+  removePresence(clientId = this.collaborationClientId): boolean {
+    if (!this.collaborationAdapter || !this.collaborationClientId || !clientId) {
+      return false;
+    }
+    const message: Extract<CollaborationPresenceMessage, { type: "presence:remove" }> = {
+      type: "presence:remove",
+      workbookId: this.getWorkbookState().id,
+      clientId,
+      sequence: ++this.collaborationPresenceSequence,
+      timestamp: Date.now()
+    };
+    const removed = this.applyCollaborationPresenceMessage(message);
+    void Promise.resolve(this.collaborationAdapter.removePresence?.(message)).catch((error: unknown) => {
+      this.emitCollaborationError("presence", error);
+    });
+    return removed;
   }
 
   registerPlugin(plugin: GridPlugin, enabled = true): void {
@@ -437,6 +900,18 @@ export class WorkbookEngine {
 
   getCellValidation(sheetId: string, row: number, col: number): CellValidationConfig | undefined {
     return this.getCell(sheetId, row, col)?.validation;
+  }
+
+  getCellNote(sheetId: string, row: number, col: number): string | undefined {
+    return this.getCell(sheetId, row, col)?.note;
+  }
+
+  getCellRichText(sheetId: string, row: number, col: number): CellRichTextSegment[] | undefined {
+    return this.getCell(sheetId, row, col)?.richText;
+  }
+
+  getCellComments(sheetId: string, row: number, col: number): CellComment[] {
+    return this.getCell(sheetId, row, col)?.comments ?? [];
   }
 
   getConditionalFormattingRules(sheetId: string): ConditionalFormattingRule[] {
@@ -546,6 +1021,15 @@ export class WorkbookEngine {
     };
   }
 
+  getSplitPane(sheetId: string): SheetSplitPane | undefined {
+    const sheet = this.getSheetState(sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+
+    return sheet.splitPane ? cloneValue(sheet.splitPane) : undefined;
+  }
+
   private emitRowModelChanged(sheetId: string): void {
     this.events.emit("row-model:changed", {
       timestamp: Date.now(),
@@ -653,6 +1137,103 @@ export class WorkbookEngine {
     }
 
     return undefined;
+  }
+
+  getClientSideQuery(sheetId: string): ClientSideQueryState | undefined {
+    const state = this.getSheetState(sheetId)?.metadata?.[CLIENT_SIDE_QUERY_METADATA_KEY];
+    if (!state || typeof state !== "object") {
+      return undefined;
+    }
+    return cloneValue(state as ClientSideQueryState);
+  }
+
+  applyClientSideSortFilter(input: {
+    sheetId: string;
+    sort?: ClientSideSortDescriptor[];
+    filters?: ClientSideFilterDescriptor[];
+    hasHeader?: boolean;
+  }): SpreadsheetOperation[] {
+    const explicitRowModel = this.explicitRowModels.get(input.sheetId);
+    if (explicitRowModel && !(explicitRowModel instanceof ClientSideRowModel)) {
+      throw createCoreOperationError(
+        "CORE_CLIENT_SIDE_ROW_MODEL_REQUIRED",
+        `Sheet does not use local or client-side rows: ${input.sheetId}`,
+        { sheetId: input.sheetId, rowModelKind: explicitRowModel.kind }
+      );
+    }
+
+    const sheet = this.getSheetState(input.sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(input.sheetId);
+    }
+
+    const state: ClientSideQueryState = {
+      sort: cloneValue(input.sort ?? []),
+      filters: cloneValue(input.filters ?? []),
+      hasHeader: input.hasHeader !== false
+    };
+    for (const descriptor of [...state.sort, ...state.filters]) {
+      if (!Number.isInteger(descriptor.column) || descriptor.column < 0 || descriptor.column >= sheet.columnCount) {
+        throw createRangeError("Client-side query column is outside the current sheet bounds.");
+      }
+    }
+
+    const firstDataRow = state.hasHeader ? 1 : 0;
+    const rowIndexes = Array.from({ length: Math.max(0, sheet.rowCount - firstDataRow) }, (_, index) => firstDataRow + index);
+    const getValue = (row: number, column: number): CellPrimitive => {
+      const cell = sheet.cells[getCellKey(row, column)];
+      return cell?.computedValue ?? cell?.value ?? null;
+    };
+    rowIndexes.sort((leftRow, rightRow) => {
+      for (const descriptor of state.sort) {
+        const comparison = compareClientSideValues(getValue(leftRow, descriptor.column), getValue(rightRow, descriptor.column));
+        if (comparison !== 0) return descriptor.direction === "asc" ? comparison : -comparison;
+      }
+      return leftRow - rightRow;
+    });
+
+    const nextCells: SheetModel["cells"] = {};
+    const nextRows: SheetModel["rows"] = {};
+    if (state.hasHeader) {
+      for (let col = 0; col < sheet.columnCount; col += 1) {
+        const header = sheet.cells[getCellKey(0, col)];
+        if (header) nextCells[getCellKey(0, col)] = cloneValue(header);
+      }
+      if (sheet.rows[0]) nextRows[0] = cloneValue(sheet.rows[0]);
+    }
+
+    rowIndexes.forEach((sourceRow, offset) => {
+      const targetRow = firstDataRow + offset;
+      for (let col = 0; col < sheet.columnCount; col += 1) {
+        const cell = sheet.cells[getCellKey(sourceRow, col)];
+        if (cell) nextCells[getCellKey(targetRow, col)] = cloneValue(cell);
+      }
+      const matches = state.filters.every((filter) => matchesClientSideFilter(getValue(sourceRow, filter.column), filter));
+      const schema = cloneValue(sheet.rows[sourceRow] ?? {});
+      if (state.filters.length) schema.hidden = !matches;
+      else delete schema.hidden;
+      if (Object.keys(schema).length) nextRows[targetRow] = schema;
+    });
+
+    const metadata = cloneValue(sheet.metadata ?? {});
+    metadata[CLIENT_SIDE_QUERY_METADATA_KEY] = cloneValue(state);
+    const operations = this.applyBatchOperations({
+      anchorSheetId: sheet.id,
+      operations: [
+        { op: "replace", id: sheet.id, path: ["cells"], value: nextCells },
+        { op: "replace", id: sheet.id, path: ["rows"], value: nextRows },
+        { op: "replace", id: sheet.id, path: ["metadata"], value: metadata }
+      ],
+      affectedRanges: [{ start: { row: firstDataRow, col: 0 }, end: { row: sheet.rowCount - 1, col: sheet.columnCount - 1 } }]
+    });
+    this.events.emit("client-side-query:applied", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId: sheet.id,
+      state: cloneValue(state)
+    });
+    this.emitRowModelChanged(sheet.id);
+    return operations;
   }
 
   private getRemotePivotRowModel(sheetId: string): RemotePivotCapableRowModel | undefined {
@@ -819,11 +1400,14 @@ export class WorkbookEngine {
       conditionalFormats: cloneValue(nextSheetInput.conditionalFormats ?? []),
       frozenRows: Math.max(0, nextSheetInput.frozenRows ?? 0),
       frozenColumns: Math.max(0, nextSheetInput.frozenColumns ?? 0),
+      splitPane: nextSheetInput.splitPane ? cloneValue(nextSheetInput.splitPane) : undefined,
       columns: cloneValue(nextSheetInput.columns ?? {}),
       rows: cloneValue(nextSheetInput.rows ?? {}),
       rowCount: Math.min(nextSheetInput.rowCount ?? currentSheet.rowCount, workbook.settings.maxRows),
       columnCount: Math.min(nextSheetInput.columnCount ?? currentSheet.columnCount, workbook.settings.maxColumns),
       charts: cloneValue(nextSheetInput.charts ?? currentSheet.charts ?? []),
+      images: cloneValue(nextSheetInput.images ?? currentSheet.images ?? []),
+      widgets: cloneValue(nextSheetInput.widgets ?? currentSheet.widgets ?? []),
       metadata: cloneValue(nextSheetInput.metadata ?? currentSheet.metadata ?? {})
     };
 
@@ -1209,6 +1793,251 @@ export class WorkbookEngine {
     );
   }
 
+  setCellNote(input: { sheetId: string; row: number; col: number; note?: string }): SpreadsheetOperation[] {
+    const sheet = this.getSnapshot().sheets.find((item) => item.id === input.sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(input.sheetId);
+    }
+    if (input.row < 0 || input.col < 0 || input.row >= sheet.rowCount || input.col >= sheet.columnCount) {
+      throw createRangeError("Cell address is outside the current sheet bounds.");
+    }
+
+    const note = input.note === undefined || input.note === "" ? undefined : input.note;
+    if (note !== undefined && note.length > this.getWorkbookState().settings.maxCellLength) {
+      throw createCoreOperationError("CORE_CELL_NOTE_MAX_LENGTH", "Cell note exceeds the configured maximum length.", {
+        maxLength: this.getWorkbookState().settings.maxCellLength
+      });
+    }
+
+    const key = getCellKey(input.row, input.col);
+    const previousCell = sheet.cells[key];
+    if (previousCell?.note === note || (!previousCell && note === undefined)) {
+      return [];
+    }
+
+    const nextCell: CellModel = {
+      ...previousCell,
+      value: previousCell?.value ?? null,
+      computedValue: previousCell?.computedValue ?? previousCell?.value ?? null,
+      note
+    };
+    if (note === undefined) {
+      delete nextCell.note;
+    }
+
+    const operations = this.executeSheetOperations(
+      input.sheetId,
+      [{ op: previousCell ? "replace" : "add", id: input.sheetId, path: ["cells", key], value: nextCell }],
+      [{ start: { row: input.row, col: input.col }, end: { row: input.row, col: input.col } }]
+    );
+    this.events.emit("cell:noteChanged", {
+      timestamp: Date.now(),
+      workbookId: this.getWorkbookState().id,
+      sheetId: input.sheetId,
+      address: { row: input.row, col: input.col },
+      note
+    });
+    return operations;
+  }
+
+  setCellRichText(input: {
+    sheetId: string;
+    row: number;
+    col: number;
+    richText?: CellRichTextSegment[];
+  }): SpreadsheetOperation[] {
+    const sheet = this.getSnapshot().sheets.find((item) => item.id === input.sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(input.sheetId);
+    }
+    if (input.row < 0 || input.col < 0 || input.row >= sheet.rowCount || input.col >= sheet.columnCount) {
+      throw createRangeError("Cell address is outside the current sheet bounds.");
+    }
+
+    const richText = input.richText?.length
+      ? normalizeRichTextSegments(input.richText, this.getWorkbookState().settings.maxCellLength)
+      : undefined;
+    const key = getCellKey(input.row, input.col);
+    const previousCell = sheet.cells[key];
+    if (JSON.stringify(previousCell?.richText) === JSON.stringify(richText) || (!previousCell && richText === undefined)) {
+      return [];
+    }
+
+    const nextCell: CellModel = {
+      ...previousCell,
+      value: previousCell?.value ?? null,
+      computedValue: previousCell?.computedValue ?? previousCell?.value ?? null,
+      richText
+    };
+    if (richText === undefined) {
+      delete nextCell.richText;
+    }
+
+    const operations = this.executeSheetOperations(
+      input.sheetId,
+      [{ op: previousCell ? "replace" : "add", id: input.sheetId, path: ["cells", key], value: nextCell }],
+      [{ start: { row: input.row, col: input.col }, end: { row: input.row, col: input.col } }]
+    );
+    this.events.emit("cell:richTextChanged", {
+      timestamp: Date.now(),
+      workbookId: this.getWorkbookState().id,
+      sheetId: input.sheetId,
+      address: { row: input.row, col: input.col },
+      richText: richText ? cloneValue(richText) : undefined
+    });
+    return operations;
+  }
+
+  createCellComment(input: {
+    sheetId: string;
+    row: number;
+    col: number;
+    comment: { id?: string; author: CellComment["author"]; content: string };
+  }): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(input.sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(input.sheetId);
+    }
+    const previousCell = this.getCellState(input.sheetId, input.row, input.col);
+    const content = input.comment.content.trim();
+    if (!content || content.length > this.getWorkbookState().settings.maxCellLength) {
+      throw createCoreOperationError("CORE_CELL_COMMENT_INVALID", "Cell comment content is empty or exceeds the configured maximum length.");
+    }
+    const comment: CellComment = {
+      id: input.comment.id?.trim() || createId("comment"),
+      author: cloneValue(input.comment.author),
+      content,
+      createdAt: Date.now(),
+      resolved: false,
+      replies: []
+    };
+    const comments = [...(previousCell?.comments ?? []), comment];
+    const operations = this.replaceCellComments(input.sheetId, input.row, input.col, previousCell, comments);
+    this.events.emit("cell:commentCreated", {
+      timestamp: Date.now(),
+      workbookId: this.getWorkbookState().id,
+      sheetId: input.sheetId,
+      address: { row: input.row, col: input.col },
+      comment: cloneValue(comment)
+    });
+    return operations;
+  }
+
+  replyToCellComment(input: {
+    sheetId: string;
+    row: number;
+    col: number;
+    commentId: string;
+    reply: { id?: string; author: CellCommentReply["author"]; content: string };
+  }): SpreadsheetOperation[] {
+    const previousCell = this.getCellState(input.sheetId, input.row, input.col);
+    const comments = cloneValue(previousCell?.comments ?? []);
+    const comment = comments.find((item) => item.id === input.commentId);
+    if (!comment) {
+      throw createCoreOperationError("CORE_CELL_COMMENT_NOT_FOUND", `Cell comment not found: ${input.commentId}`);
+    }
+    const content = input.reply.content.trim();
+    if (!content || content.length > this.getWorkbookState().settings.maxCellLength) {
+      throw createCoreOperationError("CORE_CELL_COMMENT_REPLY_INVALID", "Cell comment reply is empty or exceeds the configured maximum length.");
+    }
+    const reply: CellCommentReply = {
+      id: input.reply.id?.trim() || createId("reply"),
+      author: cloneValue(input.reply.author),
+      content,
+      createdAt: Date.now()
+    };
+    comment.replies.push(reply);
+    comment.updatedAt = reply.createdAt;
+    const operations = this.replaceCellComments(input.sheetId, input.row, input.col, previousCell, comments);
+    this.events.emit("cell:commentReplied", {
+      timestamp: Date.now(),
+      workbookId: this.getWorkbookState().id,
+      sheetId: input.sheetId,
+      address: { row: input.row, col: input.col },
+      commentId: input.commentId,
+      reply: cloneValue(reply)
+    });
+    return operations;
+  }
+
+  resolveCellComment(input: {
+    sheetId: string;
+    row: number;
+    col: number;
+    commentId: string;
+    resolved?: boolean;
+  }): SpreadsheetOperation[] {
+    const previousCell = this.getCellState(input.sheetId, input.row, input.col);
+    const comments = cloneValue(previousCell?.comments ?? []);
+    const comment = comments.find((item) => item.id === input.commentId);
+    if (!comment) {
+      throw createCoreOperationError("CORE_CELL_COMMENT_NOT_FOUND", `Cell comment not found: ${input.commentId}`);
+    }
+    const resolved = input.resolved ?? true;
+    if (comment.resolved === resolved) {
+      return [];
+    }
+    comment.resolved = resolved;
+    comment.updatedAt = Date.now();
+    const operations = this.replaceCellComments(input.sheetId, input.row, input.col, previousCell, comments);
+    this.events.emit("cell:commentResolved", {
+      timestamp: Date.now(),
+      workbookId: this.getWorkbookState().id,
+      sheetId: input.sheetId,
+      address: { row: input.row, col: input.col },
+      commentId: input.commentId,
+      resolved
+    });
+    return operations;
+  }
+
+  deleteCellComment(input: { sheetId: string; row: number; col: number; commentId: string }): SpreadsheetOperation[] {
+    const previousCell = this.getCellState(input.sheetId, input.row, input.col);
+    const comments = (previousCell?.comments ?? []).filter((comment) => comment.id !== input.commentId);
+    if (comments.length === (previousCell?.comments ?? []).length) {
+      throw createCoreOperationError("CORE_CELL_COMMENT_NOT_FOUND", `Cell comment not found: ${input.commentId}`);
+    }
+    const operations = this.replaceCellComments(input.sheetId, input.row, input.col, previousCell, comments);
+    this.events.emit("cell:commentDeleted", {
+      timestamp: Date.now(),
+      workbookId: this.getWorkbookState().id,
+      sheetId: input.sheetId,
+      address: { row: input.row, col: input.col },
+      commentId: input.commentId
+    });
+    return operations;
+  }
+
+  private replaceCellComments(
+    sheetId: string,
+    row: number,
+    col: number,
+    previousCell: CellModel | undefined,
+    comments: CellComment[]
+  ): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+    if (row < 0 || col < 0 || row >= sheet.rowCount || col >= sheet.columnCount) {
+      throw createRangeError("Cell address is outside the current sheet bounds.");
+    }
+    const nextCell: CellModel = {
+      ...previousCell,
+      value: previousCell?.value ?? null,
+      computedValue: previousCell?.computedValue ?? previousCell?.value ?? null,
+      comments: cloneValue(comments)
+    };
+    if (!comments.length) {
+      delete nextCell.comments;
+    }
+    return this.executeSheetOperations(
+      sheetId,
+      [{ op: previousCell ? "replace" : "add", id: sheetId, path: ["cells", getCellKey(row, col)], value: nextCell }],
+      [{ start: { row, col }, end: { row, col } }]
+    );
+  }
+
   setConditionalFormattingRules(sheetId: string, rules: ConditionalFormattingRule[]): SpreadsheetOperation[] {
     const sheet = this.getSnapshot().sheets.find((item) => item.id === sheetId);
     if (!sheet) {
@@ -1315,6 +2144,53 @@ export class WorkbookEngine {
           value: Math.min(Math.max(count, 0), sheet.columnCount)
         }
       ],
+      [sheet.selection]
+    );
+  }
+
+  setSplitPane(sheetId: string, splitPane: SheetSplitPane): SpreadsheetOperation[] {
+    const sheet = this.getSnapshot().sheets.find((item) => item.id === sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+
+    const horizontalRow = splitPane.horizontalRow;
+    const verticalColumn = splitPane.verticalColumn;
+    if (horizontalRow !== undefined && (!Number.isInteger(horizontalRow) || horizontalRow <= 0 || horizontalRow >= sheet.rowCount)) {
+      throw new RangeError(`Horizontal split row must be between 1 and ${sheet.rowCount - 1}.`);
+    }
+    if (verticalColumn !== undefined && (!Number.isInteger(verticalColumn) || verticalColumn <= 0 || verticalColumn >= sheet.columnCount)) {
+      throw new RangeError(`Vertical split column must be between 1 and ${sheet.columnCount - 1}.`);
+    }
+    if (horizontalRow === undefined && verticalColumn === undefined) {
+      return this.clearSplitPane(sheetId);
+    }
+
+    const nextSplitPane: SheetSplitPane = { horizontalRow, verticalColumn };
+    return this.executeSheetOperations(
+      sheetId,
+      [{
+        op: sheet.splitPane ? "replace" : "add",
+        id: sheetId,
+        path: ["splitPane"],
+        value: nextSplitPane
+      }],
+      [sheet.selection]
+    );
+  }
+
+  clearSplitPane(sheetId: string): SpreadsheetOperation[] {
+    const sheet = this.getSnapshot().sheets.find((item) => item.id === sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+    if (!sheet.splitPane) {
+      return [];
+    }
+
+    return this.executeSheetOperations(
+      sheetId,
+      [{ op: "remove", id: sheetId, path: ["splitPane"], value: undefined }],
       [sheet.selection]
     );
   }
@@ -1638,6 +2514,393 @@ export class WorkbookEngine {
 
   getChart(sheetId: string, chartId: string): WorksheetChartObject | undefined {
     return this.getCharts(sheetId).find((chart) => chart.id === chartId);
+  }
+
+  getImages(sheetId: string): WorksheetImageObject[] {
+    const sheet = this.getSheetState(sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+    return cloneValue(sheet.images ?? []);
+  }
+
+  getImage(sheetId: string, imageId: string): WorksheetImageObject | undefined {
+    return this.getImages(sheetId).find((image) => image.id === imageId);
+  }
+
+  private assertImageSource(src: string): void {
+    const settings = this.getSnapshot().settings;
+    if (!src || src.length > (settings.maxImageSourceLength ?? DEFAULT_SETTINGS.maxImageSourceLength!)) {
+      throw createCoreOperationError("CORE_IMAGE_SOURCE_INVALID", "Image source is empty or exceeds the configured limit.");
+    }
+    const isHttps = /^https:\/\/[^\s]+$/i.test(src);
+    const isSafeData = /^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src);
+    if (!isHttps && !isSafeData) {
+      throw createCoreOperationError("CORE_IMAGE_SOURCE_UNSAFE", "Image source must use HTTPS or a safe raster data URL.");
+    }
+  }
+
+  createImage(input: { sheetId: string; image: WorksheetImageObjectInput }): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(input.sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(input.sheetId);
+    }
+    this.assertImageSource(input.image.src);
+    const image: WorksheetImageObject = {
+      id: input.image.id?.trim() || createId("image"),
+      sheetId: input.sheetId,
+      src: input.image.src,
+      alt: String(input.image.alt ?? "").slice(0, this.getSnapshot().settings.maxCellLength),
+      position: {
+        fromCell: input.image.position.fromCell,
+        toCell: input.image.position.toCell,
+        offsetX: Number(input.image.position.offsetX) || 0,
+        offsetY: Number(input.image.position.offsetY) || 0,
+        width: Math.max(40, Number(input.image.position.width) || 320),
+        height: Math.max(40, Number(input.image.position.height) || 220),
+        zIndex: Math.max(0, Math.round(Number(input.image.position.zIndex ?? 1) || 1))
+      },
+      style: input.image.style ? cloneValue(input.image.style) : undefined,
+      state: {
+        selected: input.image.state?.selected ?? false,
+        visible: input.image.state?.visible ?? true,
+        locked: input.image.state?.locked ?? false
+      }
+    };
+    const operations = this.executeSheetOperations(input.sheetId, [{
+      op: "add",
+      id: input.sheetId,
+      path: ["images", (sheet.images ?? []).length],
+      value: image
+    }], [sheet.selection]);
+    this.events.emit("image:created", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId: input.sheetId,
+      imageId: image.id,
+      image: cloneValue(image)
+    });
+    return operations;
+  }
+
+  updateImage(input: {
+    sheetId: string;
+    imageId: string;
+    src?: string;
+    alt?: string;
+    position?: Partial<ChartPosition>;
+    style?: WorksheetImageObject["style"];
+    state?: Partial<WorksheetImageObject["state"]>;
+  }): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(input.sheetId);
+    const imageIndex = sheet?.images?.findIndex((image) => image.id === input.imageId) ?? -1;
+    if (!sheet || imageIndex < 0) {
+      throw createCoreOperationError("CORE_IMAGE_NOT_FOUND", `Image not found: ${input.imageId}`, { sheetId: input.sheetId });
+    }
+    const current = sheet.images![imageIndex]!;
+    if (input.src !== undefined) {
+      this.assertImageSource(input.src);
+    }
+    const next: WorksheetImageObject = {
+      ...cloneValue(current),
+      src: input.src ?? current.src,
+      alt: input.alt === undefined ? current.alt : String(input.alt).slice(0, this.getSnapshot().settings.maxCellLength),
+      position: { ...current.position, ...(input.position ?? {}) },
+      style: input.style === undefined ? current.style : cloneValue(input.style),
+      state: { ...current.state, ...(input.state ?? {}) }
+    };
+    next.position.width = Math.max(40, Number(next.position.width) || 40);
+    next.position.height = Math.max(40, Number(next.position.height) || 40);
+    const operations = this.executeSheetOperations(input.sheetId, [{
+      op: "replace",
+      id: input.sheetId,
+      path: ["images", imageIndex],
+      value: next
+    }], [sheet.selection]);
+    this.events.emit("image:updated", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId: input.sheetId,
+      imageId: input.imageId,
+      image: cloneValue(next)
+    });
+    return operations;
+  }
+
+  deleteImage(sheetId: string, imageId: string): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(sheetId);
+    const imageIndex = sheet?.images?.findIndex((image) => image.id === imageId) ?? -1;
+    if (!sheet || imageIndex < 0) {
+      throw createCoreOperationError("CORE_IMAGE_NOT_FOUND", `Image not found: ${imageId}`, { sheetId });
+    }
+    const operations = this.executeSheetOperations(sheetId, [{
+      op: "remove",
+      id: sheetId,
+      path: ["images", imageIndex],
+      value: cloneValue(sheet.images![imageIndex])
+    }], [sheet.selection]);
+    this.events.emit("image:deleted", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId,
+      imageId
+    });
+    return operations;
+  }
+
+  moveImage(input: {
+    sheetId: string;
+    imageId: string;
+    position: Pick<ChartPosition, "fromCell" | "toCell" | "offsetX" | "offsetY" | "zIndex">;
+  }): SpreadsheetOperation[] {
+    const operations = this.updateImage(input);
+    const image = this.getImage(input.sheetId, input.imageId)!;
+    this.events.emit("image:moved", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId: input.sheetId,
+      imageId: input.imageId,
+      position: cloneValue(image.position)
+    });
+    return operations;
+  }
+
+  resizeImage(input: {
+    sheetId: string;
+    imageId: string;
+    position: Pick<ChartPosition, "width" | "height" | "toCell">;
+  }): SpreadsheetOperation[] {
+    const operations = this.updateImage(input);
+    const image = this.getImage(input.sheetId, input.imageId)!;
+    this.events.emit("image:resized", {
+      timestamp: Date.now(),
+      workbookId: this.getSnapshot().id,
+      sheetId: input.sheetId,
+      imageId: input.imageId,
+      position: cloneValue(image.position)
+    });
+    return operations;
+  }
+
+  selectImage(sheetId: string, imageId?: string): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+    if (imageId && !sheet.images?.some((image) => image.id === imageId)) {
+      throw createCoreOperationError("CORE_IMAGE_NOT_FOUND", `Image not found: ${imageId}`, { sheetId });
+    }
+    const changed = (sheet.images ?? [])
+      .map((image, index) => ({ image, index, selected: image.id === imageId }))
+      .filter(({ image, selected }) => image.state.selected !== selected);
+    if (changed.length === 0) {
+      return [];
+    }
+    const operations = this.executeSheetOperations(sheetId, changed.map(({ image, index, selected }) => ({
+      op: "replace" as const,
+      id: sheetId,
+      path: ["images", index],
+      value: { ...cloneValue(image), state: { ...image.state, selected } }
+    })), [sheet.selection]);
+    for (const { image, selected } of changed) {
+      this.events.emit(selected ? "image:selected" : "image:unselected", {
+        timestamp: Date.now(),
+        workbookId: this.getSnapshot().id,
+        sheetId,
+        imageId: image.id
+      });
+    }
+    return operations;
+  }
+
+  getWidgets(sheetId: string): WorksheetWidgetObject[] {
+    const sheet = this.getSheetState(sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+    return cloneValue(sheet.widgets ?? []);
+  }
+
+  getWidget(sheetId: string, widgetId: string): WorksheetWidgetObject | undefined {
+    return this.getWidgets(sheetId).find((widget) => widget.id === widgetId);
+  }
+
+  private assertWidgetJson(value: JsonValue | Record<string, JsonValue>, field: string): void {
+    const seen = new Set<object>();
+    const visit = (candidate: unknown): void => {
+      if (candidate === null || typeof candidate === "string" || typeof candidate === "boolean") {
+        return;
+      }
+      if (typeof candidate === "number") {
+        if (Number.isFinite(candidate)) return;
+        throw createCoreOperationError("CORE_WIDGET_DATA_INVALID", `${field} must contain finite JSON values.`);
+      }
+      if (!candidate || typeof candidate !== "object" || seen.has(candidate)) {
+        throw createCoreOperationError("CORE_WIDGET_DATA_INVALID", `${field} must contain acyclic JSON values.`);
+      }
+      seen.add(candidate);
+      const prototype = Object.getPrototypeOf(candidate);
+      if (!Array.isArray(candidate) && prototype !== Object.prototype && prototype !== null) {
+        throw createCoreOperationError("CORE_WIDGET_DATA_INVALID", `${field} must contain plain JSON objects.`);
+      }
+      for (const [key, child] of Object.entries(candidate)) {
+        if (key === "__proto__" || key === "constructor" || key === "prototype") {
+          throw createCoreOperationError("CORE_WIDGET_DATA_INVALID", `${field} contains a forbidden key.`);
+        }
+        visit(child);
+      }
+      seen.delete(candidate);
+    };
+    visit(value);
+    const serialized = JSON.stringify(value);
+    const limit = this.getSnapshot().settings.maxWidgetDataLength ?? DEFAULT_SETTINGS.maxWidgetDataLength!;
+    if (serialized.length > limit) {
+      throw createCoreOperationError("CORE_WIDGET_DATA_TOO_LARGE", `${field} exceeds the configured limit.`);
+    }
+  }
+
+  createWidget(input: { sheetId: string; widget: WorksheetWidgetObjectInput }): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(input.sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(input.sheetId);
+    }
+    const type = input.widget.type.trim();
+    if (!/^[a-z][a-z0-9._-]{0,127}$/i.test(type)) {
+      throw createCoreOperationError("CORE_WIDGET_TYPE_INVALID", "Widget type must be a stable alphanumeric identifier.");
+    }
+    const config = input.widget.config ?? {};
+    this.assertWidgetJson(config, "Widget config");
+    if (input.widget.data !== undefined) this.assertWidgetJson(input.widget.data, "Widget data");
+    const widget: WorksheetWidgetObject = {
+      id: input.widget.id?.trim() || createId("widget"),
+      sheetId: input.sheetId,
+      type,
+      label: String(input.widget.label ?? type).slice(0, this.getSnapshot().settings.maxCellLength),
+      config: cloneValue(config),
+      ...(input.widget.data === undefined ? {} : { data: cloneValue(input.widget.data) }),
+      position: {
+        fromCell: input.widget.position.fromCell,
+        toCell: input.widget.position.toCell,
+        offsetX: Number(input.widget.position.offsetX) || 0,
+        offsetY: Number(input.widget.position.offsetY) || 0,
+        width: Math.max(40, Number(input.widget.position.width) || 320),
+        height: Math.max(40, Number(input.widget.position.height) || 220),
+        zIndex: Math.max(0, Math.round(Number(input.widget.position.zIndex ?? 1) || 1))
+      },
+      state: {
+        selected: input.widget.state?.selected ?? false,
+        visible: input.widget.state?.visible ?? true,
+        locked: input.widget.state?.locked ?? false
+      }
+    };
+    const operations = this.executeSheetOperations(input.sheetId, [{
+      op: "add",
+      id: input.sheetId,
+      path: ["widgets", (sheet.widgets ?? []).length],
+      value: widget
+    }], [sheet.selection]);
+    this.events.emit("widget:created", {
+      timestamp: Date.now(), workbookId: this.getSnapshot().id, sheetId: input.sheetId, widgetId: widget.id, widget: cloneValue(widget)
+    });
+    return operations;
+  }
+
+  updateWidget(input: {
+    sheetId: string;
+    widgetId: string;
+    config?: Record<string, JsonValue>;
+    data?: JsonValue;
+    label?: string;
+    position?: Partial<ChartPosition>;
+    state?: Partial<WorksheetWidgetObject["state"]>;
+  }): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(input.sheetId);
+    const widgetIndex = sheet?.widgets?.findIndex((widget) => widget.id === input.widgetId) ?? -1;
+    if (!sheet || widgetIndex < 0) {
+      throw createCoreOperationError("CORE_WIDGET_NOT_FOUND", `Widget not found: ${input.widgetId}`, { sheetId: input.sheetId });
+    }
+    if (input.config !== undefined) this.assertWidgetJson(input.config, "Widget config");
+    if (input.data !== undefined) this.assertWidgetJson(input.data, "Widget data");
+    const current = sheet.widgets![widgetIndex]!;
+    const next: WorksheetWidgetObject = {
+      ...cloneValue(current),
+      label: input.label === undefined ? current.label : String(input.label).slice(0, this.getSnapshot().settings.maxCellLength),
+      config: input.config === undefined ? current.config : cloneValue(input.config),
+      ...(input.data === undefined ? {} : { data: cloneValue(input.data) }),
+      position: { ...current.position, ...(input.position ?? {}) },
+      state: { ...current.state, ...(input.state ?? {}) }
+    };
+    next.position.width = Math.max(40, Number(next.position.width) || 40);
+    next.position.height = Math.max(40, Number(next.position.height) || 40);
+    next.position.zIndex = Math.max(0, Math.round(Number(next.position.zIndex) || 0));
+    const operations = this.executeSheetOperations(input.sheetId, [{
+      op: "replace", id: input.sheetId, path: ["widgets", widgetIndex], value: next
+    }], [sheet.selection]);
+    this.events.emit("widget:updated", {
+      timestamp: Date.now(), workbookId: this.getSnapshot().id, sheetId: input.sheetId, widgetId: input.widgetId, widget: cloneValue(next)
+    });
+    return operations;
+  }
+
+  moveWidget(input: {
+    sheetId: string;
+    widgetId: string;
+    position: Pick<ChartPosition, "fromCell" | "toCell" | "offsetX" | "offsetY" | "zIndex">;
+  }): SpreadsheetOperation[] {
+    const operations = this.updateWidget(input);
+    const widget = this.getWidget(input.sheetId, input.widgetId)!;
+    this.events.emit("widget:moved", {
+      timestamp: Date.now(), workbookId: this.getSnapshot().id, sheetId: input.sheetId, widgetId: input.widgetId, position: cloneValue(widget.position)
+    });
+    return operations;
+  }
+
+  resizeWidget(input: {
+    sheetId: string;
+    widgetId: string;
+    position: Pick<ChartPosition, "width" | "height" | "toCell">;
+  }): SpreadsheetOperation[] {
+    const operations = this.updateWidget(input);
+    const widget = this.getWidget(input.sheetId, input.widgetId)!;
+    this.events.emit("widget:resized", {
+      timestamp: Date.now(), workbookId: this.getSnapshot().id, sheetId: input.sheetId, widgetId: input.widgetId, position: cloneValue(widget.position)
+    });
+    return operations;
+  }
+
+  selectWidget(sheetId: string, widgetId?: string): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(sheetId);
+    if (!sheet) {
+      throw createSheetNotFoundError(sheetId);
+    }
+    if (widgetId && !sheet.widgets?.some((widget) => widget.id === widgetId)) {
+      throw createCoreOperationError("CORE_WIDGET_NOT_FOUND", `Widget not found: ${widgetId}`, { sheetId });
+    }
+    const changed = (sheet.widgets ?? [])
+      .map((widget, index) => ({ widget, index, selected: widget.id === widgetId }))
+      .filter(({ widget, selected }) => widget.state.selected !== selected);
+    if (changed.length === 0) {
+      return [];
+    }
+    return this.executeSheetOperations(sheetId, changed.map(({ widget, index, selected }) => ({
+      op: "replace" as const,
+      id: sheetId,
+      path: ["widgets", index],
+      value: { ...cloneValue(widget), state: { ...widget.state, selected } }
+    })), [sheet.selection]);
+  }
+
+  deleteWidget(sheetId: string, widgetId: string): SpreadsheetOperation[] {
+    const sheet = this.getSheetState(sheetId);
+    const widgetIndex = sheet?.widgets?.findIndex((widget) => widget.id === widgetId) ?? -1;
+    if (!sheet || widgetIndex < 0) {
+      throw createCoreOperationError("CORE_WIDGET_NOT_FOUND", `Widget not found: ${widgetId}`, { sheetId });
+    }
+    const operations = this.executeSheetOperations(sheetId, [{
+      op: "remove", id: sheetId, path: ["widgets", widgetIndex], value: cloneValue(sheet.widgets![widgetIndex])
+    }], [sheet.selection]);
+    this.events.emit("widget:deleted", { timestamp: Date.now(), workbookId: this.getSnapshot().id, sheetId, widgetId });
+    return operations;
   }
 
   createChart(input: { sheetId: string; chart: WorksheetChartObjectInput }): SpreadsheetOperation[] {
@@ -2196,12 +3459,29 @@ export class WorkbookEngine {
     this.disposed = true;
     this.pendingDerivedPivotRefreshes.clear();
     this.invalidatedDerivedPivotSheets.clear();
+    this.collaborationPresences.clear();
+    this.collaborationPresenceClocks.clear();
+    for (const timer of this.collaborationPresenceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.collaborationPresenceTimers.clear();
     for (const rowModel of this.explicitRowModels.values()) {
       rowModel.dispose();
     }
     this.explicitRowModels.clear();
     this.clientSideRowModels.clear();
     this.pluginManager.clear();
+    if (this.collaborationAdapter && this.collaborationClientId) {
+      void Promise.resolve(this.collaborationAdapter.disconnect?.()).catch((error: unknown) => {
+        this.emitCollaborationError("disconnect", error);
+      });
+      this.events.emit("collaboration:status", {
+        timestamp: Date.now(),
+        workbookId: this.getSnapshot().id,
+        clientId: this.collaborationClientId,
+        status: "disconnected"
+      });
+    }
     this.events.emit("engine:disposed", {
       timestamp: Date.now(),
       workbookId: this.getSnapshot().id

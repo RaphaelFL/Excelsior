@@ -7,6 +7,7 @@ export interface TooltipPayload {
 
 export class TooltipController {
   private tooltipElement: HTMLDivElement | null = null;
+  private container: HTMLElement | null = null;
 
   mount(container: HTMLElement): void {
     if (this.tooltipElement) {
@@ -34,6 +35,7 @@ export class TooltipController {
     });
     container.append(tooltip);
     this.tooltipElement = tooltip;
+    this.container = container;
   }
 
   show(payload: TooltipPayload): void {
@@ -60,8 +62,15 @@ export class TooltipController {
     const viewportHeight = typeof window !== "undefined" ? window.innerHeight : payload.clientY + offsetY + 120;
     const tooltipWidth = Math.max(32, tooltip.offsetWidth || 160);
     const tooltipHeight = Math.max(24, tooltip.offsetHeight || 70);
-    const left = clamp(payload.clientX + offsetX, 8, Math.max(8, viewportWidth - tooltipWidth - 8));
+    let left = clamp(payload.clientX + offsetX, 8, Math.max(8, viewportWidth - tooltipWidth - 8));
     const top = clamp(payload.clientY + offsetY, 8, Math.max(8, viewportHeight - tooltipHeight - 8));
+    const modebarRect = this.container?.querySelector<HTMLElement>(".excelsior-chart-modebar")?.getBoundingClientRect();
+    if (modebarRect && rectanglesOverlap(
+      { left, top, right: left + tooltipWidth, bottom: top + tooltipHeight },
+      modebarRect
+    )) {
+      left = clamp(modebarRect.left - tooltipWidth - 8, 8, Math.max(8, viewportWidth - tooltipWidth - 8));
+    }
     tooltip.style.transform = `translate(${left}px, ${top}px)`;
     tooltip.style.opacity = "1";
   }
@@ -80,7 +89,13 @@ export class TooltipController {
       this.tooltipElement.remove();
     }
     this.tooltipElement = null;
+    this.container = null;
   }
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+const rectanglesOverlap = (
+  first: Pick<DOMRect, "left" | "top" | "right" | "bottom">,
+  second: Pick<DOMRect, "left" | "top" | "right" | "bottom">
+): boolean => first.left < second.right && first.right > second.left && first.top < second.bottom && first.bottom > second.top;

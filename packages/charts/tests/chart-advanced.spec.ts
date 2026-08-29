@@ -19,6 +19,33 @@ const setContainerSize = (container: HTMLElement, width: number, height: number)
 };
 
 describe("advanced chart features", () => {
+  it("navigates the x domain with range selector and range slider controls", () => {
+    const container = document.createElement("div");
+    setContainerSize(container, 760, 420);
+    document.body.append(container);
+    const chart = createFigure(container, {
+      data: [{ type: "line", x: [0, 25, 50, 75, 100], y: [1, 2, 3, 4, 5] }],
+      layout: {
+        xAxis: {
+          rangeSelector: { visible: true, buttons: [{ label: "Últimos 25%", fraction: 0.25 }] },
+          rangeSlider: { visible: true, start: 0.1, end: 0.9 }
+        }
+      }
+    });
+    let zoomed: { xMin: number; xMax: number } | undefined;
+    chart.on("axis:zoomed", (event) => {
+      zoomed = event;
+    });
+
+    expect(container.querySelectorAll(".excelsior-chart-range-navigation input[type='range']")).toHaveLength(2);
+    container.querySelector<HTMLButtonElement>("[data-range-fraction='0.25']")!.click();
+    expect(zoomed?.xMin).toBeCloseTo(3);
+    expect(zoomed?.xMax).toBeCloseTo(4);
+
+    chart.destroy();
+    container.remove();
+  });
+
   it("applies safe transforms on cartesian traces", () => {
     const container = document.createElement("div");
     setContainerSize(container, 700, 380);

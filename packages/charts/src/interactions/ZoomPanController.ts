@@ -11,6 +11,8 @@ export class ZoomPanController {
   private target: HTMLElement | SVGElement | null = null;
   private mode: InteractionMode = "zoom";
   private isDragging = false;
+  private dragStartX = 0;
+  private dragStartY = 0;
   private dragLastX = 0;
   private dragLastY = 0;
   private zoomRectStartX = 0;
@@ -20,7 +22,7 @@ export class ZoomPanController {
   private readonly boundWheel = (event: WheelEvent): void => this.handleWheel(event);
   private readonly boundPointerDown = (event: PointerEvent): void => this.handlePointerDown(event);
   private readonly boundPointerMove = (event: PointerEvent): void => this.handlePointerMove(event);
-  private readonly boundPointerUp = (): void => this.handlePointerUp();
+  private readonly boundPointerUp = (event: PointerEvent): void => this.handlePointerUp(event);
 
   constructor(private readonly options: ZoomPanControllerOptions) {}
 
@@ -84,6 +86,8 @@ export class ZoomPanController {
     }
     if (this.mode === "pan") {
       this.isDragging = true;
+      this.dragStartX = event.clientX;
+      this.dragStartY = event.clientY;
       this.dragLastX = event.clientX;
       this.dragLastY = event.clientY;
       if (this.target instanceof SVGElement && "setPointerCapture" in this.target) {
@@ -101,14 +105,11 @@ export class ZoomPanController {
     if (!this.isDragging || this.mode !== "pan") {
       return;
     }
-    const deltaX = event.clientX - this.dragLastX;
-    const deltaY = event.clientY - this.dragLastY;
     this.dragLastX = event.clientX;
     this.dragLastY = event.clientY;
-    this.options.onPan(deltaX, deltaY, event.clientX, event.clientY);
   }
 
-  private handlePointerUp(): void {
+  private handlePointerUp(event: PointerEvent): void {
     if (this.zoomRectActive && this.mode === "zoom") {
       const x0 = this.zoomRectStartX;
       const y0 = this.zoomRectStartY;
@@ -120,6 +121,15 @@ export class ZoomPanController {
         this.options.onZoomRect?.({ x0, y0, x1, y1 });
       }
       this.zoomRectActive = false;
+    }
+    if (this.isDragging && this.mode === "pan") {
+      const endX = Number.isFinite(event.clientX) ? event.clientX : this.dragLastX;
+      const endY = Number.isFinite(event.clientY) ? event.clientY : this.dragLastY;
+      const deltaX = endX - this.dragStartX;
+      const deltaY = endY - this.dragStartY;
+      if (deltaX !== 0 || deltaY !== 0) {
+        this.options.onPan(deltaX, deltaY, endX, endY);
+      }
     }
     this.isDragging = false;
   }

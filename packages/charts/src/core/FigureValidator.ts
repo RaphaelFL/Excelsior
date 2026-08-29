@@ -69,6 +69,25 @@ export class FigureValidator {
   }
 
   private mergeLayout(partial?: Partial<ChartLayout>): ChartLayout {
+    const sanitizeAxis = (axis: ChartLayout["xAxis"]): ChartLayout["xAxis"] => ({
+      ...axis,
+      rangeSlider: axis.rangeSlider
+        ? {
+            visible: axis.rangeSlider.visible === true,
+            start: clampNumber(axis.rangeSlider.start ?? 0, 0, 1),
+            end: clampNumber(axis.rangeSlider.end ?? 1, 0, 1)
+          }
+        : undefined,
+      rangeSelector: axis.rangeSelector
+        ? {
+            visible: axis.rangeSelector.visible === true,
+            buttons: axis.rangeSelector.buttons?.slice(0, 8).map((button) => ({
+              label: sanitizeText(button.label).slice(0, 24),
+              fraction: clampNumber(button.fraction ?? 1, 0.01, 1)
+            }))
+          }
+        : undefined
+    });
     const sanitizeShape = (shape: ChartLayout["shapes"][number]): ChartLayout["shapes"][number] => ({
       ...shape,
       type: shape.type,
@@ -92,14 +111,14 @@ export class FigureValidator {
         ...DEFAULT_CHART_LAYOUT.margin,
         ...(partial?.margin ?? {})
       },
-      xAxis: {
+      xAxis: sanitizeAxis({
         ...DEFAULT_CHART_LAYOUT.xAxis,
         ...(partial?.xAxis ?? {})
-      },
-      xAxis2: {
+      }),
+      xAxis2: sanitizeAxis({
         ...DEFAULT_CHART_LAYOUT.xAxis2,
         ...(partial?.xAxis2 ?? {})
-      },
+      }),
       yAxis: {
         ...DEFAULT_CHART_LAYOUT.yAxis,
         ...(partial?.yAxis ?? {})

@@ -450,6 +450,14 @@ const evaluateNode = (
         MIN: () => Math.min(...values),
         MAX: () => Math.max(...values),
         AVERAGE: () => (values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0),
+        MEDIAN: () => {
+          const sortedValues = [...values].sort((left, right) => left - right);
+          const middle = Math.floor(sortedValues.length / 2);
+          return sortedValues.length % 2 === 0
+            ? ((sortedValues[middle - 1] ?? 0) + (sortedValues[middle] ?? 0)) / 2
+            : sortedValues[middle] ?? 0;
+        },
+        PRODUCT: () => values.reduce((total, value) => total * value, 1),
         COUNT: () => values.filter((value) => !Number.isNaN(value)).length,
         COUNTA: () => values.filter((value) => value !== 0).length,
         ABS: () => Math.abs(values[0] ?? 0),
@@ -459,6 +467,18 @@ const evaluateNode = (
           const factor = 10 ** precision;
           return Math.round(base * factor) / factor;
         },
+        ROUNDUP: () => {
+          const factor = 10 ** (values[1] ?? 0);
+          return Math.ceil((values[0] ?? 0) * factor) / factor;
+        },
+        ROUNDDOWN: () => {
+          const factor = 10 ** (values[1] ?? 0);
+          return Math.floor((values[0] ?? 0) * factor) / factor;
+        },
+        SQRT: () => Math.sqrt(values[0] ?? 0),
+        POWER: () => (values[0] ?? 0) ** (values[1] ?? 0),
+        MOD: () => (values[0] ?? 0) % (values[1] ?? 1),
+        SIGN: () => Math.sign(values[0] ?? 0),
         IF: () => ((values[0] ?? 0) !== 0 ? values[1] ?? 0 : values[2] ?? 0),
         AND: () => (values.every((value) => value !== 0) ? 1 : 0),
         OR: () => (values.some((value) => value !== 0) ? 1 : 0),

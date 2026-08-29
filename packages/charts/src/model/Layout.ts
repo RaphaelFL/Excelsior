@@ -7,6 +7,22 @@ export interface ChartMargin {
 
 export type ChartAxisType = "linear" | "log" | "date" | "category" | "multicategory";
 
+export interface ChartRangeSelectorButton {
+  label: string;
+  fraction?: number;
+}
+
+export interface ChartRangeSelector {
+  visible: boolean;
+  buttons?: ChartRangeSelectorButton[];
+}
+
+export interface ChartRangeSlider {
+  visible: boolean;
+  start?: number;
+  end?: number;
+}
+
 export interface ChartAxis {
   title?: string;
   min?: number;
@@ -17,6 +33,8 @@ export interface ChartAxis {
   tickCount?: number;
   zeroLine?: boolean;
   autoRange?: boolean;
+  rangeSelector?: ChartRangeSelector;
+  rangeSlider?: ChartRangeSlider;
 }
 
 export interface ChartSubplotLayout {

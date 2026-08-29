@@ -8,6 +8,8 @@ export type {
 	CustomCellEditorInstance,
 	CustomCellRenderContext,
 	CustomCellRenderer,
+	CustomWidgetRenderContext,
+	CustomWidgetRenderer,
 	DomSpreadsheetRendererOptions,
 	RendererFormatters,
 	RendererLocalizationOptions,

@@ -1,10 +1,7 @@
-import { fileURLToPath } from "node:url";
 import type { WorkbookModel } from "@excelsior/core";
 import { createXlsxAdapter } from "./xlsx-adapter";
 
-const { exportWorkbookToXlsx, importWorkbookFromXlsx, exportTableToXlsx, importTableFromXlsx } = createXlsxAdapter(
-  fileURLToPath(import.meta.url)
-);
+const { exportWorkbookToXlsx, importWorkbookFromXlsx, exportTableToXlsx, importTableFromXlsx } = createXlsxAdapter();
 
 export interface WorkbookChartInteropEngine {
   toJSON(options?: { emitChartExportEvents?: boolean }): WorkbookModel;

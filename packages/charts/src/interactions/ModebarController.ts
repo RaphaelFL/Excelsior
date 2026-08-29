@@ -15,6 +15,7 @@ interface ModebarControllerOptions {
 export class ModebarController {
   private element: HTMLDivElement | null = null;
   private modeButtons = new Map<InteractionMode, HTMLButtonElement>();
+  private mode: InteractionMode = "zoom";
 
   constructor(private readonly options: ModebarControllerOptions) {}
 
@@ -53,10 +54,11 @@ export class ModebarController {
 
     container.append(element);
     this.element = element;
-    this.setMode("zoom");
+    this.setMode(this.mode);
   }
 
   setMode(mode: InteractionMode): void {
+    this.mode = mode;
     for (const [buttonMode, button] of this.modeButtons.entries()) {
       const active = buttonMode === mode;
       button.style.background = active ? "#1d4ed8" : "transparent";

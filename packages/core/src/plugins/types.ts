@@ -50,6 +50,7 @@ export interface PluginCommandApi {
     col: number;
     validation?: CellValidationConfig;
   }): SpreadsheetOperation[];
+  setCellNote(input: { sheetId: string; row: number; col: number; note?: string }): SpreadsheetOperation[];
   setConditionalFormattingRules(sheetId: string, rules: ConditionalFormattingRule[]): SpreadsheetOperation[];
   freezeRows(sheetId: string, count: number): SpreadsheetOperation[];
   freezeColumns(sheetId: string, count: number): SpreadsheetOperation[];
@@ -87,6 +88,7 @@ export interface PluginCommandApi {
     value: string | number | boolean | null;
   }): CellValidationResult;
   getCellValidation(sheetId: string, row: number, col: number): CellValidationConfig | undefined;
+  getCellNote(sheetId: string, row: number, col: number): string | undefined;
   getConditionalFormattingRules(sheetId: string): ConditionalFormattingRule[];
   getConditionalStyle(sheetId: string, row: number, col: number): CellStyle | undefined;
   getFrozenPane(sheetId: string): { rows: number; columns: number };

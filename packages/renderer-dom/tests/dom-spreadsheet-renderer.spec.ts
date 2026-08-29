@@ -158,6 +158,63 @@ describe("DomSpreadsheetRenderer", () => {
     container.remove();
   });
 
+  it("renders safe rich text, validated links and overflow without HTML injection", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+    const engine = new WorkbookEngine(
+      {
+        data: [{
+          name: "Rich text",
+          rowCount: 3,
+          columnCount: 2,
+          cells: {
+            "0:0": {
+              value: "fallback",
+              computedValue: "fallback",
+              style: { overflow: "ellipsis" },
+              richText: [
+                { text: "<script>alert(1)</script>", style: { bold: true, italic: true, color: "#123abc" } },
+                { text: " secure", style: { underline: true, strike: true }, hyperlink: "https://example.com/docs" },
+                { text: " blocked", hyperlink: "javascript:alert(1)" }
+              ]
+            },
+            "1:0": {
+              value: "=1+1",
+              formula: "=1+1",
+              computedValue: 2,
+              richText: [{ text: "must not replace formula" }]
+            }
+          }
+        }]
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const richCell = container.querySelector<HTMLElement>("[data-row='0'][data-col='0']");
+    const link = richCell?.querySelector<HTMLAnchorElement>("a");
+
+    expect(richCell?.textContent).toBe("<script>alert(1)</script> secure blocked");
+    expect(richCell?.querySelector("script")).toBeNull();
+    expect(richCell?.querySelectorAll("a")).toHaveLength(1);
+    expect(link?.href).toBe("https://example.com/docs");
+    expect(link?.rel).toBe("noopener noreferrer");
+    expect(link?.target).toBe("_blank");
+    expect(richCell?.querySelector<HTMLElement>("span span")?.style.fontWeight).toBe("bold");
+    expect(richCell?.title).toBe("<script>alert(1)</script> secure blocked");
+    expect(container.querySelector<HTMLElement>("[data-row='1'][data-col='0']")?.textContent).toBe("2");
+
+    container.querySelector<HTMLButtonElement>("[data-action='overflow']")?.click();
+    expect(engine.getCell(engine.getActiveSheet().id, 0, 0)?.style?.overflow).toBe("visible");
+    expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0'] .excelsior-cell-rich-text")?.style.overflow).toBe(
+      "visible"
+    );
+
+    renderer.dispose();
+    container.remove();
+  });
+
   it("selects the full sheet when the top-left corner is clicked", () => {
     const container = document.createElement("div");
     container.style.width = "800px";
@@ -213,6 +270,38 @@ describe("DomSpreadsheetRenderer", () => {
 
     expect(headerM?.textContent).toBe("M");
     expect(headerP?.textContent).toBe("P");
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("keeps column headers aligned with columns while scrolling", () => {
+    const container = document.createElement("div");
+    container.style.width = "320px";
+    container.style.height = "240px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      {
+        data: [{ name: "Aligned", rowCount: 4, columnCount: 16 }],
+        settings: { columnWidth: 120 }
+      },
+      new BasicFormulaEngine()
+    );
+    const sheet = engine.getActiveSheet();
+    engine.freezeColumns(sheet.id, 1);
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const viewport = container.querySelector<HTMLElement>(".excelsior-viewport")!;
+
+    expect(container.querySelector<HTMLElement>("[data-column-header-col='0']")?.style.flex).toBe("0 0 auto");
+    expect(container.querySelector<HTMLElement>("[data-column-header-col='1']")?.style.width).toBe("120px");
+
+    viewport.scrollLeft = 180;
+    viewport.dispatchEvent(new Event("scroll"));
+    renderer.render();
+
+    expect(container.querySelector<HTMLElement>("[data-column-header-col='0']")?.style.transform).toBe("");
+    expect(container.querySelector<HTMLElement>("[data-column-header-col='1']")?.style.transform).toBe("translateX(-180px)");
 
     renderer.dispose();
     container.remove();
@@ -752,6 +841,63 @@ describe("DomSpreadsheetRenderer", () => {
     container.remove();
   });
 
+  it("uses a bounded date picker for cells with date validation", () => {
+    const container = document.createElement("div");
+    container.style.width = "900px";
+    container.style.height = "500px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    engine.setCellValidation({
+      sheetId: sheet.id,
+      row: 0,
+      col: 0,
+      validation: { rules: [{ type: "date", min: "2024-01-01", max: "2024-12-31" }] }
+    });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      const editor = container.querySelector<HTMLInputElement>(".excelsior-editor")!;
+      expect(editor.type).toBe("date");
+      expect(editor.min).toBe("2024-01-01");
+      expect(editor.max).toBe("2024-12-31");
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("commits values from warning validation rules and shows non-error feedback", () => {
+    const container = document.createElement("div");
+    container.style.width = "900px";
+    container.style.height = "500px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    engine.setCellValidation({
+      sheetId: sheet.id,
+      row: 0,
+      col: 0,
+      validation: { rules: [{ type: "number", min: 10, severity: "warning", message: "Valor abaixo do recomendado." }] }
+    });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      const editor = container.querySelector<HTMLInputElement>(".excelsior-editor")!;
+      editor.value = "5";
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(engine.getCell(sheet.id, 0, 0)?.value).toBe("5");
+      const status = container.querySelector<HTMLElement>(".excelsior-status-message")!;
+      expect(status.textContent).toBe("Valor abaixo do recomendado.");
+      expect(status.classList.contains("is-error")).toBe(false);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
   it("coalesces burst renders when renderDebounceMs is configured", () => {
     vi.useFakeTimers();
 
@@ -985,6 +1131,33 @@ describe("DomSpreadsheetRenderer", () => {
     container.remove();
   });
 
+  it("copies formatting to a target cell as one undoable operation without changing its value", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine({}, new BasicFormulaEngine());
+    const sheet = engine.getActiveSheet();
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: "Origem" });
+    engine.setCellStyle({ sheetId: sheet.id, row: 0, col: 0, style: { backgroundColor: "#dcfce7", fontWeight: "bold" } });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 1, value: "Destino" });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    container.querySelector<HTMLButtonElement>("[data-action='format-painter']")?.click();
+    expect(container.querySelector("[data-action='format-painter']")?.getAttribute("aria-pressed")).toBe("true");
+    container.querySelector<HTMLElement>("[data-row='1'][data-col='1']")?.click();
+
+    expect(engine.getDisplayValue(sheet.id, 1, 1)).toBe("Destino");
+    expect(engine.getCell(sheet.id, 1, 1)?.style).toMatchObject({ backgroundColor: "#dcfce7", fontWeight: "bold" });
+    expect(engine.undo()).toBe(true);
+    expect(engine.getDisplayValue(sheet.id, 1, 1)).toBe("Destino");
+    expect(engine.getCell(sheet.id, 1, 1)?.style).toBeUndefined();
+
+    renderer.dispose();
+    container.remove();
+  });
+
   it("renders dropdown affordance and commits selection from list validation UI", () => {
     const container = document.createElement("div");
     container.style.width = "800px";
@@ -1019,6 +1192,225 @@ describe("DomSpreadsheetRenderer", () => {
     expect(engine.getDisplayValue(sheet.id, 0, 0)).toBe("Doing");
 
     renderer.dispose();
+    container.remove();
+  });
+
+  it("creates, edits and removes a cell note from the renderer", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine({}, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+
+    container.querySelector<HTMLButtonElement>("[data-action='cell-note']")?.click();
+    const panel = container.querySelector<HTMLElement>(".excelsior-note-panel");
+    const input = panel?.querySelector<HTMLTextAreaElement>(".excelsior-note-input");
+    expect(panel?.hidden).toBe(false);
+    input!.value = "Revisar <script>alert(1)</script>";
+    panel?.querySelector<HTMLButtonElement>("[data-note-action='save']")?.click();
+
+    expect(engine.getCellNote(sheet.id, 0, 0)).toBe("Revisar <script>alert(1)</script>");
+    const indicator = container.querySelector<HTMLButtonElement>("[data-row='0'][data-col='0'] [data-cell-note]");
+    expect(indicator?.title).toBe("Revisar <script>alert(1)</script>");
+    expect(container.querySelector("script")).toBeNull();
+
+    indicator?.click();
+    expect(input?.value).toBe("Revisar <script>alert(1)</script>");
+    input!.value = "Texto atualizado";
+    panel?.querySelector<HTMLButtonElement>("[data-note-action='save']")?.click();
+    expect(engine.getCellNote(sheet.id, 0, 0)).toBe("Texto atualizado");
+
+    container.querySelector<HTMLButtonElement>("[data-row='0'][data-col='0'] [data-cell-note]")?.click();
+    panel?.querySelector<HTMLButtonElement>("[data-note-action='remove']")?.click();
+    expect(engine.getCellNote(sheet.id, 0, 0)).toBeUndefined();
+    expect(container.querySelector("[data-cell-note]")).toBeNull();
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("renders remote presence safely and syncs local selection when enabled", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+    let connection: { receivePresence?: (message: any) => void } | undefined;
+    const updatePresence = vi.fn();
+    const engine = new WorkbookEngine(
+      {
+        collaboration: {
+          clientId: "local",
+          adapter: {
+            connect: (nextConnection) => {
+              connection = nextConnection;
+            },
+            send: vi.fn(),
+            updatePresence
+          }
+        }
+      },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine, {
+      collaboration: {
+        user: { id: "local-user", name: "Rafa" },
+        color: "#0f766e"
+      }
+    });
+    const sheet = engine.getActiveSheet();
+
+    engine.selectRange({ sheetId: sheet.id, rowStart: 1, rowEnd: 2, colStart: 1, colEnd: 2 });
+    expect(updatePresence).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        presence: expect.objectContaining({
+          user: { id: "local-user", name: "Rafa" },
+          cursor: { sheetId: sheet.id, row: 2, col: 2 },
+          selection: {
+            sheetId: sheet.id,
+            range: { start: { row: 1, col: 1 }, end: { row: 2, col: 2 } }
+          }
+        })
+      })
+    );
+
+    connection?.receivePresence?.({
+      type: "presence:update",
+      workbookId: engine.getSnapshot().id,
+      clientId: "remote",
+      sequence: 1,
+      timestamp: Date.now(),
+      presence: {
+        clientId: "remote",
+        sequence: 1,
+        updatedAt: Date.now(),
+        expiresAt: Date.now() + 30_000,
+        user: { id: "remote-user", name: "<img src=x onerror=alert(1)>" },
+        cursor: { sheetId: sheet.id, row: 0, col: 0 },
+        selection: {
+          sheetId: sheet.id,
+          range: { start: { row: 0, col: 0 }, end: { row: 0, col: 1 } }
+        },
+        metadata: { color: "url(javascript:alert(1))" }
+      }
+    });
+
+    const cursor = container.querySelector<HTMLElement>("[data-remote-cursor='remote']");
+    expect(cursor?.textContent).toBe("<img src=x onerror=alert(1)>");
+    expect(cursor?.getAttribute("aria-label")).toContain("<img src=x onerror=alert(1)>");
+    expect(cursor?.style.getPropertyValue("--excelsior-presence-color")).toBe("#2563eb");
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelectorAll("[data-remote-selection='remote']")).toHaveLength(2);
+
+    renderer.dispose();
+    expect(container.querySelector("[data-remote-cursor]")).toBeNull();
+    container.remove();
+  });
+
+  it("manages comment threads while preserving the legacy note editor", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({}, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine, {
+      comments: { author: { id: "author-1", name: "Ana" } }
+    });
+    const sheet = engine.getActiveSheet();
+
+    container.querySelector<HTMLButtonElement>("[data-action='cell-note']")?.click();
+    const panel = container.querySelector<HTMLElement>(".excelsior-note-panel");
+    expect(panel?.querySelector(".excelsior-note-input")).not.toBeNull();
+    const newComment = panel?.querySelector<HTMLTextAreaElement>("[data-comment-input='new']");
+    newComment!.value = "Revisar <script>alert(1)</script>";
+    panel?.querySelector<HTMLButtonElement>("[data-comment-action='create']")?.click();
+
+    const comment = engine.getCellComments(sheet.id, 0, 0)[0];
+    expect(comment?.content).toBe("Revisar <script>alert(1)</script>");
+    expect(panel?.querySelector("script")).toBeNull();
+    expect(panel?.querySelector("[data-comment-thread]")?.textContent).toContain("Revisar <script>alert(1)</script>");
+
+    const reply = panel?.querySelector<HTMLTextAreaElement>(`[data-comment-reply='${comment.id}']`);
+    reply!.value = "Resposta mínima";
+    panel?.querySelector<HTMLButtonElement>(`[data-comment-action='reply'][data-comment-id='${comment.id}']`)?.click();
+    expect(engine.getCellComments(sheet.id, 0, 0)[0]?.replies[0]?.content).toBe("Resposta mínima");
+
+    panel?.querySelector<HTMLButtonElement>(`[data-comment-action='resolve'][data-comment-id='${comment.id}']`)?.click();
+    expect(engine.getCellComments(sheet.id, 0, 0)[0]?.resolved).toBe(true);
+    panel?.querySelector<HTMLButtonElement>(`[data-comment-action='reopen'][data-comment-id='${comment.id}']`)?.click();
+    expect(engine.getCellComments(sheet.id, 0, 0)[0]?.resolved).toBe(false);
+    panel?.querySelector<HTMLButtonElement>(`[data-comment-action='delete'][data-comment-id='${comment.id}']`)?.click();
+    expect(engine.getCellComments(sheet.id, 0, 0)).toEqual([]);
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("renders and removes safe worksheet image objects", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    engine.createImage({
+      sheetId: sheet.id,
+      image: {
+        id: "image-renderer",
+        src: "data:image/png;base64,iVBORw0KGgo=",
+        alt: "Preview seguro",
+        position: { fromCell: "B2", offsetX: 0, offsetY: 0, width: 240, height: 160 }
+      }
+    });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      const picture = container.querySelector<HTMLImageElement>("[data-image-id='image-renderer'] img");
+      expect(picture?.alt).toBe("Preview seguro");
+      container.querySelector<HTMLButtonElement>("[data-image-id='image-renderer'] [data-image-action='delete']")?.click();
+      expect(engine.getImages(sheet.id)).toEqual([]);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("renders custom widgets only through an opt-in registry and cleans runtimes", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "480px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    engine.createWidget({
+      sheetId: sheet.id,
+      widget: {
+        id: "widget-renderer",
+        type: "kpi",
+        config: { suffix: "%" },
+        data: { value: 42 },
+        position: { fromCell: "B2", offsetX: 0, offsetY: 0, width: 180, height: 100 }
+      }
+    });
+    const cleanup = vi.fn();
+    const widgetRenderer = vi.fn(({ host, widget }) => {
+      const output = document.createElement("strong");
+      output.textContent = `${(widget.data as { value: number }).value}${widget.config.suffix}`;
+      host.append(output);
+      return cleanup;
+    });
+    const renderer = new DomSpreadsheetRenderer(container, engine, { widgetRenderers: { kpi: widgetRenderer } });
+
+    expect(container.querySelector("[data-widget-id='widget-renderer']")?.textContent).toContain("42%");
+    expect(widgetRenderer).toHaveBeenCalledOnce();
+    renderer.dispose();
+    expect(cleanup).toHaveBeenCalledOnce();
+
+    const placeholderRenderer = new DomSpreadsheetRenderer(container, engine);
+    expect(container.querySelector("[data-widget-id='widget-renderer']")?.textContent).toContain("Widget não registrado: kpi");
+    placeholderRenderer.dispose();
     container.remove();
   });
 
@@ -1249,6 +1641,41 @@ describe("DomSpreadsheetRenderer", () => {
     expect(leftFrozen?.classList.contains("is-frozen-column")).toBe(true);
     expect(topFrozen?.style.top).toBe("120px");
     expect(leftFrozen?.style.left).toBe("236px");
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("renders persistent split dividers and keeps both synchronized regions navigable", () => {
+    const container = document.createElement("div");
+    container.style.width = "320px";
+    container.style.height = "240px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine({ data: [{ rowCount: 30, columnCount: 12 }] }, new BasicFormulaEngine());
+    const sheet = engine.getActiveSheet();
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: "before" });
+    engine.setCellValue({ sheetId: sheet.id, row: 8, col: 6, value: "after" });
+    engine.setSplitPane(sheet.id, { horizontalRow: 3, verticalColumn: 2 });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const viewport = container.querySelector<HTMLElement>(".excelsior-viewport")!;
+
+    viewport.scrollTop = 120;
+    viewport.scrollLeft = 180;
+    viewport.dispatchEvent(new Event("scroll"));
+
+    const horizontal = container.querySelector<HTMLElement>("[data-split-axis='horizontal']");
+    const vertical = container.querySelector<HTMLElement>("[data-split-axis='vertical']");
+    expect(horizontal?.getAttribute("role")).toBe("separator");
+    expect(vertical?.getAttribute("aria-valuenow")).toBe("2");
+    expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")?.style.top).toBe("120px");
+    expect(container.querySelectorAll("[data-row='0'][data-col='0']")).toHaveLength(1);
+
+    horizontal?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(engine.getSplitPane(sheet.id)?.horizontalRow).toBe(4);
+    container.querySelector<HTMLElement>("[data-split-axis='vertical']")
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    expect(engine.getSplitPane(sheet.id)).toEqual({ horizontalRow: 4 });
 
     renderer.dispose();
     container.remove();
@@ -1657,6 +2084,75 @@ describe("DomSpreadsheetRenderer", () => {
       }
     });
 
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("accumulates local sort and typed filters from the active-column toolbar", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "240px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({ data: [{ rowCount: 4, columnCount: 2, cells: {
+      "0:0": { value: "Name" }, "0:1": { value: "Score" },
+      "1:0": { value: "Beta" }, "1:1": { value: 10 },
+      "2:0": { value: "Alpha" }, "2:1": { value: 20 },
+      "3:0": { value: "Alpine" }, "3:1": { value: 15 }
+    } }] }, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    container.querySelector<HTMLButtonElement>("[data-action='sort-asc']")?.click();
+    const type = container.querySelector<HTMLSelectElement>("[data-local-filter-type]");
+    const operator = container.querySelector<HTMLSelectElement>("[data-local-filter-operator]");
+    const value = container.querySelector<HTMLInputElement>("[data-local-filter-value]");
+    const valueTo = container.querySelector<HTMLInputElement>("[data-local-filter-value-to]");
+    expect(type?.selectedOptions[0]?.textContent).toBe("Texto");
+    expect(operator?.selectedOptions[0]?.textContent).toBe("Igual a");
+    expect(valueTo?.disabled).toBe(true);
+    type!.value = "number";
+    type?.dispatchEvent(new Event("change"));
+    expect(Array.from(operator!.options, (option) => option.value)).toEqual(["equals", "gt", "gte", "lt", "lte", "between"]);
+    expect(value?.inputMode).toBe("decimal");
+    operator!.value = "between";
+    operator?.dispatchEvent(new Event("change"));
+    expect(valueTo?.disabled).toBe(false);
+    value!.value = "10,5";
+    valueTo!.value = "20,5";
+    const viewport = container.querySelector<HTMLElement>(".excelsior-viewport")!;
+    viewport.scrollTop = 120;
+    container.querySelector<HTMLButtonElement>("[data-action='apply-local-filter']")?.click();
+    expect(viewport.scrollTop).toBe(0);
+    expect(engine.getClientSideQuery(engine.getActiveSheet().id)?.filters[0]).toMatchObject({
+      type: "number",
+      operator: "between",
+      value: 10.5,
+      valueTo: 20.5
+    });
+    const refreshedType = container.querySelector<HTMLSelectElement>("[data-local-filter-type]")!;
+    const refreshedOperator = container.querySelector<HTMLSelectElement>("[data-local-filter-operator]")!;
+    const refreshedValue = container.querySelector<HTMLInputElement>("[data-local-filter-value]")!;
+    refreshedType.value = "text";
+    refreshedType.dispatchEvent(new Event("change"));
+    refreshedOperator.value = "startsWith";
+    refreshedValue.value = "al";
+    container.querySelector<HTMLButtonElement>("[data-action='apply-local-filter']")?.click();
+
+    expect(engine.getClientSideQuery(engine.getActiveSheet().id)).toMatchObject({
+      sort: [{ column: 0, direction: "asc" }],
+      filters: [{ column: 0, type: "text", operator: "startsWith", value: "al" }]
+    });
+    expect(engine.getRowSchema(engine.getActiveSheet().id, 3)?.hidden).toBe(true);
+
+    container.querySelector<HTMLButtonElement>("[data-action='clear-local-filters']")?.click();
+    expect(engine.getClientSideQuery(engine.getActiveSheet().id)).toMatchObject({
+      sort: [{ column: 0, direction: "asc" }],
+      filters: []
+    });
+    expect(engine.getRowSchema(engine.getActiveSheet().id, 3)?.hidden).not.toBe(true);
+    expect(container.querySelector<HTMLInputElement>("[data-local-filter-value]")?.value).toBe("");
+
+    container.querySelector<HTMLButtonElement>("[data-action='clear-column-query']")?.click();
+    expect(engine.getClientSideQuery(engine.getActiveSheet().id)).toMatchObject({ sort: [], filters: [] });
     renderer.dispose();
     container.remove();
   });
@@ -2607,6 +3103,30 @@ describe("DomSpreadsheetRenderer", () => {
       const panel = container.querySelector<HTMLElement>(".excelsior-chart-edit-panel");
       expect(panel?.hidden).toBe(false);
 
+      const header = panel?.querySelector<HTMLElement>(".excelsior-chart-panel-header");
+      const gridPanel = container.querySelector<HTMLElement>(".excelsior-grid-panel");
+      header && Object.defineProperty(header, "getBoundingClientRect", {
+        configurable: true,
+        value: () => ({ x: 100, y: 40, left: 100, top: 40, right: 300, bottom: 80, width: 200, height: 40, toJSON: () => ({}) })
+      });
+      panel && Object.defineProperty(panel, "getBoundingClientRect", {
+        configurable: true,
+        value: () => ({ x: 100, y: 40, left: 100, top: 40, right: 500, bottom: 340, width: 400, height: 300, toJSON: () => ({}) })
+      });
+      panel && Object.defineProperty(panel, "offsetWidth", { configurable: true, value: 400 });
+      panel && Object.defineProperty(panel, "offsetHeight", { configurable: true, value: 300 });
+      gridPanel && Object.defineProperty(gridPanel, "getBoundingClientRect", {
+        configurable: true,
+        value: () => ({ x: 0, y: 0, left: 0, top: 0, right: 900, bottom: 520, width: 900, height: 520, toJSON: () => ({}) })
+      });
+
+      header?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 120, clientY: 60 }));
+      globalThis.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 260, clientY: 150 }));
+      globalThis.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      expect(panel?.style.left).toBe("240px");
+      expect(panel?.style.top).toBe("130px");
+      expect(panel?.style.right).toBe("auto");
+
       const titleInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='title']");
       const typeSelect = panel?.querySelector<HTMLSelectElement>("[data-chart-role='type']");
       const rangeInput = panel?.querySelector<HTMLInputElement>("[data-chart-role='range']");
@@ -2646,7 +3166,7 @@ describe("DomSpreadsheetRenderer", () => {
     }
   });
 
-  it("renders chart categories and disables in-development chart actions", () => {
+  it("renders chart categories and enables supported statistical chart actions", () => {
     const container = document.createElement("div");
     container.style.width = "1000px";
     container.style.height = "520px";
@@ -2660,8 +3180,194 @@ describe("DomSpreadsheetRenderer", () => {
       expect(container.querySelector("[data-chart-category='financial']")).not.toBeNull();
       expect(container.querySelector("[data-chart-category='advanced']")).not.toBeNull();
       expect(container.querySelector<HTMLButtonElement>("[data-action='chart-line']")?.disabled).toBe(false);
-      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-candlestick']")?.disabled).toBe(true);
-      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-surface3d']")?.disabled).toBe(true);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-histogram']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-box']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-violin']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-heatmap']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-contour']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-candlestick']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-waterfall']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-funnel']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-polar']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-ternary']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-treemap']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-sunburst']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-sankey']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-surface']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-surface3d']")?.disabled).toBe(false);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='chart-scatter3d']")?.disabled).toBe(false);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("builds statistical chart traces from the selected spreadsheet range", () => {
+    const container = document.createElement("div");
+    container.style.width = "1000px";
+    container.style.height = "520px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({}, new BasicFormulaEngine());
+    const sheet = engine.getActiveSheet();
+    const values = [
+      ["Item", "Receita", "Custo"],
+      ["A", 10, 4],
+      ["B", 20, 8],
+      ["C", 30, 12]
+    ] as const;
+    values.forEach((row, rowIndex) =>
+      row.forEach((value, colIndex) => engine.setCellValue({ sheetId: sheet.id, row: rowIndex, col: colIndex, value }))
+    );
+    engine.selectRange({ sheetId: sheet.id, rowStart: 0, colStart: 0, rowEnd: 3, colEnd: 2 });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      container.querySelector<HTMLButtonElement>("[data-action='chart-histogram']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-box']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-heatmap']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-violin']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-contour']")?.click();
+      const charts = engine.getCharts(sheet.id);
+      expect(charts.map((chart) => chart.type)).toEqual(["histogram", "box", "heatmap", "violin", "contour"]);
+      expect(charts[0]?.figure.data).toMatchObject([
+        { type: "histogram", name: "Receita", values: [10, 20, 30] },
+        { type: "histogram", name: "Custo", values: [4, 8, 12] }
+      ]);
+      expect(charts[1]?.figure.data).toMatchObject([
+        { type: "box", values: [10, 20, 30] },
+        { type: "box", values: [4, 8, 12] }
+      ]);
+      expect(charts[2]?.figure.data).toMatchObject([
+        { type: "heatmap", x: ["Receita", "Custo"], y: ["A", "B", "C"], z: [[10, 4], [20, 8], [30, 12]] }
+      ]);
+      expect(charts[3]?.figure.data).toMatchObject([
+        { type: "violin", values: [10, 20, 30] },
+        { type: "violin", values: [4, 8, 12] }
+      ]);
+      expect(charts[4]?.figure.data).toMatchObject([{ type: "contour", z: [[10, 4], [20, 8], [30, 12]] }]);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("builds financial and polar chart traces from spreadsheet ranges", () => {
+    const container = document.createElement("div");
+    container.style.width = "1000px";
+    container.style.height = "520px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({}, new BasicFormulaEngine());
+    const sheet = engine.getActiveSheet();
+    const values = [
+      ["Dia", "Abertura", "Máxima", "Mínima", "Fechamento"],
+      ["D1", 10, 15, 8, 13],
+      ["D2", 13, 18, 11, 16]
+    ] as const;
+    values.forEach((row, rowIndex) =>
+      row.forEach((value, colIndex) => engine.setCellValue({ sheetId: sheet.id, row: rowIndex, col: colIndex, value }))
+    );
+    engine.selectRange({ sheetId: sheet.id, rowStart: 0, colStart: 0, rowEnd: 2, colEnd: 4 });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      container.querySelector<HTMLButtonElement>("[data-action='chart-candlestick']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-waterfall']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-funnel']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-polar']")?.click();
+      const charts = engine.getCharts(sheet.id);
+      expect(charts.map((chart) => chart.type)).toEqual(["candlestick", "waterfall", "funnel", "polar"]);
+      expect(charts[0]?.figure.data).toMatchObject([
+        { type: "candlestick", x: ["D1", "D2"], open: [10, 13], high: [15, 18], low: [8, 11], close: [13, 16] }
+      ]);
+      expect(charts[1]?.figure.data).toMatchObject([{ type: "waterfall", x: ["D1", "D2"], y: [10, 13] }]);
+      expect(charts[2]?.figure.data).toMatchObject([{ type: "funnel", labels: ["D1", "D2"], values: [10, 13] }]);
+      expect(charts[3]?.figure.data).toMatchObject([{ type: "polar", theta: ["D1", "D2"], r: [10, 13] }]);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("builds hierarchy, flow and 3D traces from spreadsheet ranges", () => {
+    const container = document.createElement("div");
+    container.style.width = "1000px";
+    container.style.height = "520px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({}, new BasicFormulaEngine());
+    const sheet = engine.getActiveSheet();
+    const values = [
+      ["Item", "Pai", "Valor", "Y", "Z"],
+      ["Raiz", "", 10, 20, 30],
+      ["Filho", "Raiz", 4, 8, 12]
+    ] as const;
+    values.forEach((row, rowIndex) =>
+      row.forEach((value, colIndex) => engine.setCellValue({ sheetId: sheet.id, row: rowIndex, col: colIndex, value }))
+    );
+    engine.selectRange({ sheetId: sheet.id, rowStart: 0, colStart: 0, rowEnd: 2, colEnd: 4 });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      container.querySelector<HTMLButtonElement>("[data-action='chart-treemap']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-sunburst']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-sankey']")?.click();
+      engine.selectRange({ sheetId: sheet.id, rowStart: 0, colStart: 2, rowEnd: 2, colEnd: 4 });
+      container.querySelector<HTMLButtonElement>("[data-action='chart-surface']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-surface3d']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-scatter3d']")?.click();
+      container.querySelector<HTMLButtonElement>("[data-action='chart-ternary']")?.click();
+      const charts = engine.getCharts(sheet.id);
+      expect(charts.map((chart) => chart.type)).toEqual(["treemap", "sunburst", "sankey", "surface", "surface3d", "scatter3d", "ternary"]);
+      expect(charts[0]?.figure.data).toMatchObject([{ type: "treemap", ids: ["Raiz", "Filho"], parents: ["", "Raiz"], values: [10, 4] }]);
+      expect(charts[1]?.figure.data).toMatchObject([{ type: "sunburst", ids: ["Raiz", "Filho"], parents: ["", "Raiz"], values: [10, 4] }]);
+      expect(charts[2]?.figure.data).toMatchObject([{ type: "sankey", links: { value: [10, 4] } }]);
+      expect(charts[3]?.figure.data).toMatchObject([{ type: "surface", z: [[10, 20, 30], [4, 8, 12]] }]);
+      expect(charts[4]?.figure.data).toMatchObject([{ type: "surface", z: [[10, 20, 30], [4, 8, 12]] }]);
+      expect(charts[5]?.figure.data).toMatchObject([{ type: "scatter3d", x: [10, 4], y: [20, 8], z: [30, 12] }]);
+      expect(charts[6]?.figure.data).toMatchObject([{ type: "ternary", a: [10, 4], b: [20, 8], c: [30, 12] }]);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  }, 10_000);
+
+  it("imports a safe GeoJSON file and binds map values from the selected range", async () => {
+    const container = document.createElement("div");
+    container.style.width = "1000px";
+    container.style.height = "520px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const sheet = engine.getActiveSheet();
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: "region" });
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 1, value: "value" });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 0, value: "north" });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 1, value: 12 });
+    engine.selectRange({ sheetId: sheet.id, rowStart: 0, colStart: 0, rowEnd: 1, colEnd: 1 });
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+
+    try {
+      const input = container.querySelector<HTMLInputElement>("input[accept*='.geojson']")!;
+      const file = new File([JSON.stringify({
+        type: "FeatureCollection",
+        features: [{
+          type: "Feature",
+          properties: { region: "north" },
+          geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }
+        }]
+      })], "regions.geojson", { type: "application/geo+json" });
+      Object.defineProperty(input, "files", { configurable: true, value: [file] });
+      input.dispatchEvent(new Event("change"));
+      await vi.waitFor(() => expect(engine.getCharts(sheet.id)).toHaveLength(1));
+      expect(engine.getCharts(sheet.id)[0]).toMatchObject({
+        type: "geo",
+        figure: { data: [{ type: "geo", locations: ["north"], values: [12], featureIdField: "region" }] }
+      });
+      engine.setCellValue({ sheetId: sheet.id, row: 1, col: 1, value: 24 });
+      expect(engine.getCharts(sheet.id)[0]?.figure.data[0]).toMatchObject({
+        type: "geo",
+        locations: ["north"],
+        values: [24],
+        featureIdField: "region"
+      });
     } finally {
       renderer.dispose();
       container.remove();
@@ -2740,6 +3446,101 @@ describe("DomSpreadsheetRenderer", () => {
       expect(layout?.yAxis?.type).toBe("log");
       expect(layout?.xAxis?.visible).toBe(false);
       expect(layout?.yAxis?.visible).toBe(true);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("adds annotations and shapes from the chart edit panel", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: "Mês" });
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 1, value: "Valor" });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 0, value: "Jan" });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 1, value: 10 });
+    engine.selectRange({ sheetId: sheet.id, rowStart: 0, colStart: 0, rowEnd: 1, colEnd: 1 });
+
+    try {
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")!.click();
+      const chartId = engine.getCharts(sheet.id)[0]!.id;
+      container.querySelector<HTMLElement>(`[data-chart-id='${chartId}'] .excelsior-chart-object-header`)!.click();
+      const panel = container.querySelector<HTMLElement>(".excelsior-chart-edit-panel")!;
+      panel.querySelector<HTMLInputElement>("[data-chart-role='annotation-text']")!.value = "Meta";
+      panel.querySelector<HTMLInputElement>("[data-chart-role='annotation-x']")!.value = "0.4";
+      panel.querySelector<HTMLInputElement>("[data-chart-role='annotation-y']")!.value = "0.7";
+      panel.querySelector<HTMLSelectElement>("[data-chart-role='shape-type']")!.value = "line";
+      panel.querySelector<HTMLButtonElement>("[data-chart-action='apply']")!.click();
+      expect(engine.getChart(sheet.id, chartId)?.figure.layout).toMatchObject({
+        annotations: [{ text: "Meta", x: 0.4, y: 0.7 }],
+        shapes: [{ type: "line", x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.8 }]
+      });
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("adds and removes a safe chart layout image from the edit panel", async () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: "X" });
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 1, value: "Y" });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 0, value: "A" });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 1, value: 1 });
+    engine.selectRange({ sheetId: sheet.id, rowStart: 0, colStart: 0, rowEnd: 1, colEnd: 1 });
+
+    try {
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")!.click();
+      const chartId = engine.getCharts(sheet.id)[0]!.id;
+      container.querySelector<HTMLElement>(`[data-chart-id='${chartId}'] .excelsior-chart-object-header`)!.click();
+      const input = container.querySelector<HTMLInputElement>("[data-chart-layout-image='file']")!;
+      Object.defineProperty(input, "files", { configurable: true, value: [new File(["png"], "mark.png", { type: "image/png" })] });
+      input.dispatchEvent(new Event("change"));
+      await vi.waitFor(() => expect((engine.getChart(sheet.id, chartId)?.figure.layout as { images?: unknown[] }).images).toHaveLength(1));
+      container.querySelector<HTMLButtonElement>("[data-chart-action='remove-image']")!.click();
+      expect((engine.getChart(sheet.id, chartId)?.figure.layout as { images?: unknown[] }).images).toEqual([]);
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("enables range navigation from the chart edit panel", () => {
+    const container = document.createElement("div");
+    container.style.width = "1100px";
+    container.style.height = "620px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 0, value: "X" });
+    engine.setCellValue({ sheetId: sheet.id, row: 0, col: 1, value: "Y" });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 0, value: "A" });
+    engine.setCellValue({ sheetId: sheet.id, row: 1, col: 1, value: 1 });
+    engine.selectRange({ sheetId: sheet.id, rowStart: 0, colStart: 0, rowEnd: 1, colEnd: 1 });
+
+    try {
+      container.querySelector<HTMLButtonElement>("[data-action='chart-line']")!.click();
+      const chartId = engine.getCharts(sheet.id)[0]!.id;
+      container.querySelector<HTMLElement>(`[data-chart-id='${chartId}'] .excelsior-chart-object-header`)!.click();
+      const panel = container.querySelector<HTMLElement>(".excelsior-chart-edit-panel")!;
+      panel.querySelector<HTMLInputElement>("[data-chart-role='range-selector']")!.checked = true;
+      panel.querySelector<HTMLInputElement>("[data-chart-role='range-slider']")!.checked = true;
+      panel.querySelector<HTMLButtonElement>("[data-chart-action='apply']")!.click();
+      expect(engine.getChart(sheet.id, chartId)?.figure.layout).toMatchObject({
+        xAxis: { rangeSelector: { visible: true }, rangeSlider: { visible: true, start: 0, end: 1 } }
+      });
     } finally {
       renderer.dispose();
       container.remove();
@@ -3349,6 +4150,209 @@ describe("DomSpreadsheetRenderer", () => {
 
       renderer.dispose();
     } finally {
+      container.remove();
+    }
+  });
+
+  it("applies font family, size and underline from the toolbar", () => {
+    const container = document.createElement("div");
+    container.style.width = "900px";
+    container.style.height = "500px";
+    document.body.append(container);
+    const engine = new WorkbookEngine();
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheet = engine.getActiveSheet();
+
+    try {
+      const family = container.querySelector<HTMLSelectElement>("[data-font-family]")!;
+      family.value = "Georgia";
+      family.dispatchEvent(new Event("input", { bubbles: true }));
+      const size = container.querySelector<HTMLSelectElement>("[data-font-size]")!;
+      size.value = "18";
+      size.dispatchEvent(new Event("input", { bubbles: true }));
+      container.querySelector<HTMLButtonElement>("[data-action='underline']")!.click();
+
+      expect(engine.getCell(sheet.id, 0, 0)?.style).toMatchObject({
+        fontFamily: "Georgia",
+        fontSize: 18,
+        underline: true
+      });
+    } finally {
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("applies number formats, strike, vertical alignment and clears formatting from the toolbar", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "240px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({ data: [{ rowCount: 2, columnCount: 2, cells: {
+      "0:0": { value: 0.125 },
+      "0:1": { value: 1234.5 }
+    } }] }, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine, { localization: { locale: "pt-BR" } });
+
+    container.querySelector<HTMLButtonElement>("[data-action='percentage-format']")?.click();
+    expect(engine.getCell(engine.getActiveSheet().id, 0, 0)?.style?.format).toBe("0.00%");
+    expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")?.textContent).toContain("12,50");
+
+    container.querySelector<HTMLButtonElement>("[data-action='strike']")?.click();
+    container.querySelector<HTMLButtonElement>("[data-action='align-bottom']")?.click();
+    expect(engine.getCell(engine.getActiveSheet().id, 0, 0)?.style).toMatchObject({ strike: true, alignVertical: "bottom" });
+    expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")?.style.textDecorationLine).toContain("line-through");
+
+    container.querySelector<HTMLButtonElement>("[data-action='clear-format']")?.click();
+    expect(engine.getCell(engine.getActiveSheet().id, 0, 0)?.style).toEqual({});
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("exposes format, quick sum, freeze and directional merge controls", () => {
+    const container = document.createElement("div");
+    container.style.width = "900px";
+    container.style.height = "300px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({ data: [{ rowCount: 6, columnCount: 4, cells: {
+      "0:1": { value: 10 },
+      "1:1": { value: 20 }
+    } }] }, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheetId = engine.getActiveSheet().id;
+
+    engine.selectRange({ sheetId, rowStart: 2, rowEnd: 2, colStart: 1, colEnd: 1 });
+    renderer.render();
+    container.querySelector<HTMLButtonElement>("[data-action='quick-sum']")?.click();
+    expect(engine.getCell(sheetId, 2, 1)?.value).toBe("=SUM(B1:B2)");
+
+    container.querySelector<HTMLButtonElement>("[data-action='freeze-rows']")?.click();
+    container.querySelector<HTMLButtonElement>("[data-action='freeze-columns']")?.click();
+    expect(engine.getFrozenPane(sheetId)).toEqual({ rows: 3, columns: 2 });
+    container.querySelector<HTMLButtonElement>("[data-action='unfreeze']")?.click();
+    expect(engine.getFrozenPane(sheetId)).toEqual({ rows: 0, columns: 0 });
+
+    engine.selectRange({ sheetId, rowStart: 3, rowEnd: 4, colStart: 0, colEnd: 1 });
+    renderer.render();
+    container.querySelector<HTMLButtonElement>("[data-action='merge-horizontal']")?.click();
+    expect(engine.getActiveSheet().merges).toEqual(expect.arrayContaining([
+      { start: { row: 3, col: 0 }, end: { row: 3, col: 1 } },
+      { start: { row: 4, col: 0 }, end: { row: 4, col: 1 } }
+    ]));
+
+    renderer.dispose();
+    container.remove();
+  });
+
+  it("exposes borders, rotation, links, column split, SVG capture and sheet zoom", () => {
+    const container = document.createElement("div");
+    container.style.width = "900px";
+    container.style.height = "300px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({ data: [{ rowCount: 4, columnCount: 4, cells: {
+      "0:0": { value: "Excelsior" },
+      "1:0": { value: "nome,sobrenome" }
+    } }] }, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheetId = engine.getActiveSheet().id;
+    const createObjectURL = vi.fn(() => "blob:excelsior");
+    const revokeObjectURL = vi.fn();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    try {
+      container.querySelector<HTMLButtonElement>("[data-action='border-all']")!.click();
+      container.querySelector<HTMLButtonElement>("[data-action='rotate-clockwise']")!.click();
+      expect(engine.getCell(sheetId, 0, 0)?.style).toMatchObject({
+        rotation: 45,
+        border: {
+          top: { color: "#334155", style: "thin" },
+          right: { color: "#334155", style: "thin" },
+          bottom: { color: "#334155", style: "thin" },
+          left: { color: "#334155", style: "thin" }
+        }
+      });
+      expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0'] .excelsior-cell-content")?.style.transform).toBe("rotate(45deg)");
+
+      container.querySelector<HTMLButtonElement>("[data-action='insert-link']")!.click();
+      const toolValue = container.querySelector<HTMLInputElement>("[data-toolbar-tool-value]")!;
+      toolValue.value = "https://example.com";
+      container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+      expect(engine.getCellRichText(sheetId, 0, 0)).toEqual([
+        { text: "Excelsior", hyperlink: "https://example.com/" }
+      ]);
+
+      engine.selectRange({ sheetId, rowStart: 1, rowEnd: 1, colStart: 0, colEnd: 0 });
+      renderer.render();
+      container.querySelector<HTMLButtonElement>("[data-action='split-column']")!.click();
+      toolValue.value = ",";
+      container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+      expect(engine.getCell(sheetId, 1, 0)?.value).toBe("nome");
+      expect(engine.getCell(sheetId, 1, 1)?.value).toBe("sobrenome");
+
+      const initialWidth = Number.parseFloat(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.style.width);
+      container.querySelector<HTMLButtonElement>("[data-action='zoom-in']")!.click();
+      const zoomedWidth = Number.parseFloat(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.style.width);
+      expect(zoomedWidth).toBeGreaterThan(initialWidth);
+      expect(container.querySelector<HTMLButtonElement>("[data-action='zoom-reset']")?.title).toBe("Zoom 110%");
+
+      container.querySelector<HTMLButtonElement>("[data-action='export-svg']")!.click();
+      expect(createObjectURL).toHaveBeenCalledOnce();
+      expect(anchorClick).toHaveBeenCalledOnce();
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:excelsior");
+    } finally {
+      anchorClick.mockRestore();
+      Object.defineProperty(URL, "createObjectURL", { configurable: true, value: originalCreateObjectURL });
+      Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: originalRevokeObjectURL });
+      renderer.dispose();
+      container.remove();
+    }
+  });
+
+  it("configures validation and conditional formatting and locates special cells", () => {
+    const container = document.createElement("div");
+    container.style.width = "800px";
+    container.style.height = "260px";
+    document.body.append(container);
+    const engine = new WorkbookEngine({ data: [{ rowCount: 4, columnCount: 4, cells: {
+      "0:0": { value: 20 },
+      "2:2": { value: "=SUM(A1:A2)" }
+    } }] }, new BasicFormulaEngine());
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const sheetId = engine.getActiveSheet().id;
+    try {
+      container.querySelector<HTMLButtonElement>("[data-action='data-validation']")!.click();
+      const toolMode = container.querySelector<HTMLSelectElement>("[data-toolbar-tool-mode]")!;
+      const toolValue = container.querySelector<HTMLInputElement>("[data-toolbar-tool-value]")!;
+      toolMode.value = "lista";
+      toolValue.value = "Alpha, Beta";
+      container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+      expect(engine.getCellValidation(sheetId, 0, 0)).toEqual({
+        rules: [{ type: "dropdown", values: ["Alpha", "Beta"] }]
+      });
+
+      container.querySelector<HTMLButtonElement>("[data-action='conditional-formatting']")!.click();
+  toolMode.value = "maior";
+  toolValue.value = "10";
+  container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+      expect(engine.getConditionalFormattingRules(sheetId)).toEqual([
+        expect.objectContaining({ type: "greaterThan", value: 10 })
+      ]);
+      expect(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")?.style.backgroundColor).toBe("rgb(254, 240, 138)");
+
+      container.querySelector<HTMLButtonElement>("[data-action='find-special']")!.click();
+  toolMode.value = "formulas";
+  container.querySelector<HTMLButtonElement>("[data-tool-action='apply']")!.click();
+      expect(engine.getActiveSheet().selection).toEqual({
+        start: { row: 2, col: 2 },
+        end: { row: 2, col: 2 }
+      });
+    } finally {
+      renderer.dispose();
       container.remove();
     }
   });

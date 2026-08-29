@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFigure } from "../src";
+import { createFigure, TooltipController } from "../src";
 
 const setContainerSize = (container: HTMLElement, width: number, height: number): void => {
   Object.defineProperty(container, "clientWidth", { configurable: true, value: width });
@@ -52,6 +52,26 @@ const createPointerLikeEvent = (
 };
 
 describe("chart interactions", () => {
+  it("positions tooltips away from the modebar", () => {
+    const container = document.createElement("div");
+    const modebar = document.createElement("div");
+    modebar.className = "excelsior-chart-modebar";
+    modebar.getBoundingClientRect = () => ({ left: 600, top: 8, right: 712, bottom: 52, width: 112, height: 44, x: 600, y: 8, toJSON: () => ({}) });
+    container.append(modebar);
+    document.body.append(container);
+    const controller = new TooltipController();
+    controller.mount(container);
+    const tooltip = container.querySelector<HTMLElement>(".excelsior-chart-tooltip")!;
+    Object.defineProperty(tooltip, "offsetWidth", { configurable: true, value: 160 });
+    Object.defineProperty(tooltip, "offsetHeight", { configurable: true, value: 40 });
+
+    controller.show({ title: "Point", lines: ["x: 10"], clientX: 650, clientY: 10 });
+
+    expect(tooltip.style.transform).toBe("translate(432px, 24px)");
+    controller.destroy();
+    container.remove();
+  });
+
   it("toggles traces from legend clicks", () => {
     const container = document.createElement("div");
     setContainerSize(container, 740, 400);
@@ -295,6 +315,31 @@ describe("chart interactions", () => {
     expect(typeof figure.layout.yAxis.min).toBe("number");
     expect(typeof figure.layout.yAxis.max).toBe("number");
 
+    chart.destroy();
+    container.remove();
+  });
+
+  it("preserves pan mode and applies complete drag gestures after rerender", () => {
+    const container = document.createElement("div");
+    setContainerSize(container, 780, 420);
+    document.body.append(container);
+    const chart = createFigure(container, {
+      data: [{ type: "line", x: [0, 1, 2, 3, 4], y: [10, 20, 15, 30, 25] }],
+      config: { modebar: true }
+    });
+    const panEvents: Array<{ xMin: number; xMax: number }> = [];
+    chart.on("axis:panned", (payload) => panEvents.push(payload));
+    container.querySelector<HTMLButtonElement>("[aria-label='Modo arrastar']")?.click();
+
+    for (let gesture = 0; gesture < 2; gesture += 1) {
+      const root = container.querySelector("svg");
+      root?.dispatchEvent(createPointerLikeEvent("pointerdown", { pointerId: gesture + 1, clientX: 300, clientY: 200 }));
+      root?.dispatchEvent(createPointerLikeEvent("pointermove", { pointerId: gesture + 1, clientX: 340, clientY: 220 }));
+      root?.dispatchEvent(createPointerLikeEvent("pointerup", { pointerId: gesture + 1, clientX: 360, clientY: 230 }));
+    }
+
+    expect(panEvents).toHaveLength(2);
+    expect(container.querySelector<HTMLButtonElement>("[aria-label='Modo arrastar']")?.style.background).toBe("rgb(29, 78, 216)");
     chart.destroy();
     container.remove();
   });

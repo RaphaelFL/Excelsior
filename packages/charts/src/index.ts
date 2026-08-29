@@ -121,6 +121,7 @@ export { LegendController } from "./interactions/LegendController";
 export { ModebarController } from "./interactions/ModebarController";
 export { ZoomPanController } from "./interactions/ZoomPanController";
 export { SelectionController } from "./interactions/SelectionController";
+export { RangeNavigationController } from "./interactions/RangeNavigationController";
 export { createFigureFromSpreadsheetRange } from "./adapters/spreadsheet-adapter";
 export type { ChartRenderer } from "./renderers/ChartRenderer";
 export type { ChartFigure, ChartFigureInput, ChartFigureMetadata, ChartFrame, ChartSelectionState, ChartSelectedPoint } from "./model/Figure";

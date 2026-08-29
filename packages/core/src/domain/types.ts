@@ -49,6 +49,7 @@ export interface SpreadsheetError {
 export interface CellValidationBaseRule {
   message?: string;
   allowFormula?: boolean;
+  severity?: "error" | "warning";
 }
 
 export interface CellValidationTextRule extends CellValidationBaseRule {
@@ -110,6 +111,12 @@ export interface CellValidationCustomRule extends CellValidationBaseRule {
   params?: Record<string, unknown>;
 }
 
+export interface CellValidationCellComparisonRule extends CellValidationBaseRule {
+  type: "cellComparison";
+  reference: CellAddress;
+  operator: "equals" | "notEquals" | "greaterThan" | "greaterThanOrEqual" | "lessThan" | "lessThanOrEqual";
+}
+
 export type CellValidationRule =
   | CellValidationTextRule
   | CellValidationNumberRule
@@ -121,7 +128,8 @@ export type CellValidationRule =
   | CellValidationRangeRule
   | CellValidationLengthRule
   | CellValidationRegexRule
-  | CellValidationCustomRule;
+  | CellValidationCustomRule
+  | CellValidationCellComparisonRule;
 
 export interface CellValidationConfig {
   rules: CellValidationRule[];
@@ -132,6 +140,7 @@ export interface CellValidationIssue {
   message: string;
   ruleType: CellValidationRule["type"];
   validator?: string;
+  severity?: "error" | "warning";
 }
 
 export interface CellValidationResult {
@@ -235,7 +244,10 @@ export interface CellStyle {
   fontWeight?: "normal" | "bold";
   fontStyle?: "normal" | "italic";
   underline?: boolean;
+  strike?: boolean;
+  rotation?: 0 | 45 | -45 | 90 | -90;
   wrap?: boolean;
+  overflow?: "clip" | "ellipsis" | "visible";
   format?: string;
   indent?: number;
   border?: {
@@ -244,6 +256,20 @@ export interface CellStyle {
     bottom?: CellBorderStyle;
     left?: CellBorderStyle;
   };
+}
+
+export interface CellRichTextStyle {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  color?: string;
+}
+
+export interface CellRichTextSegment {
+  text: string;
+  style?: CellRichTextStyle;
+  hyperlink?: string;
 }
 
 export interface SheetMerge {
@@ -263,6 +289,63 @@ export interface RowSchema {
   style?: CellStyle;
 }
 
+export type ClientSideSortDirection = "asc" | "desc";
+
+export interface ClientSideSortDescriptor {
+  column: number;
+  direction: ClientSideSortDirection;
+}
+
+export type ClientSideFilterType = "text" | "number" | "date";
+
+export type ClientSideFilterOperator =
+  | "equals"
+  | "contains"
+  | "startsWith"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "between";
+
+export interface ClientSideFilterDescriptor {
+  column: number;
+  type: ClientSideFilterType;
+  operator: ClientSideFilterOperator;
+  value: string | number;
+  valueTo?: string | number;
+  caseSensitive?: boolean;
+}
+
+export interface ClientSideQueryState {
+  sort: ClientSideSortDescriptor[];
+  filters: ClientSideFilterDescriptor[];
+  hasHeader: boolean;
+}
+
+export interface CommentAuthor {
+  id: string;
+  name?: string;
+}
+
+export interface CellCommentReply {
+  id: string;
+  author: CommentAuthor;
+  content: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface CellComment {
+  id: string;
+  author: CommentAuthor;
+  content: string;
+  createdAt: number;
+  updatedAt?: number;
+  resolved: boolean;
+  replies: CellCommentReply[];
+}
+
 export interface CellModel {
   value: CellPrimitive;
   formula?: string;
@@ -271,6 +354,8 @@ export interface CellModel {
   validation?: CellValidationConfig;
   style?: CellStyle;
   note?: string;
+  comments?: CellComment[];
+  richText?: CellRichTextSegment[];
   metadata?: Record<string, unknown>;
 }
 
@@ -284,11 +369,15 @@ export type WorksheetChartType =
   | "scatter"
   | "histogram"
   | "box"
+  | "violin"
   | "heatmap"
+  | "contour"
   | "candlestick"
   | "waterfall"
   | "funnel"
   | "polar"
+  | "ternary"
+  | "geo"
   | "treemap"
   | "sunburst"
   | "sankey"
@@ -374,6 +463,68 @@ export interface WorksheetChartObjectInput {
   excelInterop?: Partial<WorksheetChartObject["excelInterop"]>;
 }
 
+export interface WorksheetImageObject {
+  id: string;
+  sheetId: string;
+  src: string;
+  alt: string;
+  position: ChartPosition;
+  style?: {
+    objectFit?: "contain" | "cover" | "fill";
+    borderColor?: string;
+    borderWidth?: number;
+    opacity?: number;
+  };
+  state: {
+    selected: boolean;
+    visible: boolean;
+    locked: boolean;
+  };
+}
+
+export interface WorksheetImageObjectInput {
+  id?: string;
+  src: string;
+  alt?: string;
+  position: Omit<ChartPosition, "zIndex"> & { zIndex?: number };
+  style?: WorksheetImageObject["style"];
+  state?: Partial<WorksheetImageObject["state"]>;
+}
+
+export type JsonPrimitive = string | number | boolean | null;
+
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export interface WorksheetWidgetObject {
+  id: string;
+  sheetId: string;
+  type: string;
+  label: string;
+  config: { [key: string]: JsonValue };
+  data?: JsonValue;
+  position: ChartPosition;
+  state: {
+    selected: boolean;
+    visible: boolean;
+    locked: boolean;
+  };
+}
+
+export interface WorksheetWidgetObjectInput {
+  id?: string;
+  type: string;
+  label?: string;
+  config?: { [key: string]: JsonValue };
+  data?: JsonValue;
+  position: Omit<ChartPosition, "zIndex"> & { zIndex?: number };
+  state?: Partial<WorksheetWidgetObject["state"]>;
+}
+
+export interface SheetSplitPane {
+  horizontalRow?: number;
+  verticalColumn?: number;
+}
+
 export interface SheetModel {
   id: string;
   name: string;
@@ -382,12 +533,15 @@ export interface SheetModel {
   conditionalFormats?: ConditionalFormattingRule[];
   frozenRows?: number;
   frozenColumns?: number;
+  splitPane?: SheetSplitPane;
   columns: Record<number, ColumnSchema>;
   rows: Record<number, RowSchema>;
   rowCount: number;
   columnCount: number;
   selection: CellRange;
   charts?: WorksheetChartObject[];
+  images?: WorksheetImageObject[];
+  widgets?: WorksheetWidgetObject[];
   metadata?: Record<string, unknown>;
 }
 
@@ -397,6 +551,8 @@ export interface WorkbookSettings {
   maxCellLength: number;
   maxFormulaLength: number;
   maxPasteCells: number;
+  maxImageSourceLength?: number;
+  maxWidgetDataLength?: number;
   maxRecalcCells?: number;
   maxPivotSourceRows?: number;
   rowHeight: number;
@@ -425,9 +581,12 @@ export interface WorkbookDataInput {
   conditionalFormats?: ConditionalFormattingRule[];
   frozenRows?: number;
   frozenColumns?: number;
+  splitPane?: SheetSplitPane;
   columns?: Record<number, ColumnSchema>;
   rows?: Record<number, RowSchema>;
   charts?: WorksheetChartObject[];
+  images?: WorksheetImageObject[];
+  widgets?: WorksheetWidgetObject[];
   metadata?: Record<string, unknown>;
 }
 
@@ -436,6 +595,7 @@ export interface WorkbookConfig {
   settings?: Partial<WorkbookSettings>;
   metadata?: Record<string, unknown>;
   pivotModule?: PivotModule | false;
+  collaboration?: CollaborationConfig;
 }
 
 export type PivotAggregateFunction = "sum" | "avg" | "min" | "max" | "count";
@@ -523,6 +683,70 @@ export interface SpreadsheetOperation {
   value: unknown;
 }
 
+export interface CollaborationEnvelope {
+  id: string;
+  workbookId: string;
+  clientId: string;
+  sequence: number;
+  timestamp: number;
+  sheetId?: string;
+  operations: SpreadsheetOperation[];
+}
+
+export type CollaborationConflictPolicy = "last-write-wins";
+
+export interface CollaborationPresence {
+  clientId: string;
+  sequence: number;
+  updatedAt: number;
+  expiresAt: number;
+  user?: CommentAuthor;
+  cursor?: CellAddress & { sheetId: string };
+  selection?: { sheetId: string; range: CellRange };
+  metadata?: Record<string, unknown>;
+}
+
+export type CollaborationPresenceMessage =
+  | {
+      type: "presence:update";
+      workbookId: string;
+      clientId: string;
+      sequence: number;
+      timestamp: number;
+      presence: CollaborationPresence;
+    }
+  | {
+      type: "presence:remove";
+      workbookId: string;
+      clientId: string;
+      sequence: number;
+      timestamp: number;
+    };
+
+export interface CollaborationConnection {
+  workbookId: string;
+  clientId: string;
+  receive: (envelope: CollaborationEnvelope) => void;
+  receivePresence?: (message: CollaborationPresenceMessage) => void;
+  receiveError?: (error: unknown) => void;
+}
+
+export interface CollaborationAdapter {
+  connect(connection: CollaborationConnection): void | Promise<void>;
+  send(envelope: CollaborationEnvelope): void | Promise<void>;
+  getPresence?(workbookId: string): CollaborationPresence[] | Promise<CollaborationPresence[]>;
+  updatePresence?(message: Extract<CollaborationPresenceMessage, { type: "presence:update" }>): void | Promise<void>;
+  removePresence?(message: Extract<CollaborationPresenceMessage, { type: "presence:remove" }>): void | Promise<void>;
+  disconnect?(): void | Promise<void>;
+}
+
+export interface CollaborationConfig {
+  adapter: CollaborationAdapter;
+  clientId?: string;
+  conflictPolicy?: CollaborationConflictPolicy;
+  presenceTtlMs?: number;
+}
+
 export interface SpreadsheetEventMap {
   "engine:created": {
     timestamp: number;
@@ -548,11 +772,86 @@ export interface SpreadsheetEventMap {
     commandType: string;
     errorCode: string;
   };
+  "collaboration:status": {
+    timestamp: number;
+    workbookId: string;
+    clientId: string;
+    status: "connecting" | "connected" | "disconnected" | "error";
+  };
+  "collaboration:operationsApplied": {
+    timestamp: number;
+    workbookId: string;
+    clientId: string;
+    envelopeId: string;
+    operationCount: number;
+  };
+  "collaboration:error": {
+    timestamp: number;
+    workbookId: string;
+    clientId: string;
+    phase: "connect" | "send" | "receive" | "presence" | "disconnect";
+    message: string;
+  };
+  "collaboration:presenceChanged": {
+    timestamp: number;
+    workbookId: string;
+    presence: CollaborationPresence;
+  };
+  "collaboration:presenceRemoved": {
+    timestamp: number;
+    workbookId: string;
+    clientId: string;
+    reason: "removed" | "expired";
+  };
   "cell:updated": {
     timestamp: number;
     workbookId: string;
     sheetId: string;
     address: CellAddress;
+  };
+  "cell:richTextChanged": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    address: CellAddress;
+    richText?: CellRichTextSegment[];
+  };
+  "cell:noteChanged": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    address: CellAddress;
+    note?: string;
+  };
+  "cell:commentCreated": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    address: CellAddress;
+    comment: CellComment;
+  };
+  "cell:commentReplied": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    address: CellAddress;
+    commentId: string;
+    reply: CellCommentReply;
+  };
+  "cell:commentResolved": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    address: CellAddress;
+    commentId: string;
+    resolved: boolean;
+  };
+  "cell:commentDeleted": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    address: CellAddress;
+    commentId: string;
   };
   "selection:changed": {
     timestamp: number;
@@ -560,12 +859,98 @@ export interface SpreadsheetEventMap {
     sheetId: string;
     range: CellRange;
   };
+  "split-pane:changed": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    splitPane?: SheetSplitPane;
+  };
   "chart:created": {
     timestamp: number;
     workbookId: string;
     sheetId: string;
     chartId: string;
     chart: WorksheetChartObject;
+  };
+  "image:created": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    imageId: string;
+    image: WorksheetImageObject;
+  };
+  "image:updated": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    imageId: string;
+    image: WorksheetImageObject;
+  };
+  "image:deleted": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    imageId: string;
+  };
+  "image:moved": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    imageId: string;
+    position: ChartPosition;
+  };
+  "image:resized": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    imageId: string;
+    position: ChartPosition;
+  };
+  "image:selected": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    imageId: string;
+  };
+  "image:unselected": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    imageId: string;
+  };
+  "widget:created": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    widgetId: string;
+    widget: WorksheetWidgetObject;
+  };
+  "widget:updated": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    widgetId: string;
+    widget: WorksheetWidgetObject;
+  };
+  "widget:deleted": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    widgetId: string;
+  };
+  "widget:moved": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    widgetId: string;
+    position: ChartPosition;
+  };
+  "widget:resized": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    widgetId: string;
+    position: ChartPosition;
   };
   "chart:updated": {
     timestamp: number;
@@ -673,6 +1058,12 @@ export interface SpreadsheetEventMap {
     timestamp: number;
     workbookId: string;
     sheetId: string;
+  };
+  "client-side-query:applied": {
+    timestamp: number;
+    workbookId: string;
+    sheetId: string;
+    state: ClientSideQueryState;
   };
   "security:blocked-input": {
     timestamp: number;

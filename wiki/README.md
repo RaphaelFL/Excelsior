@@ -5,7 +5,7 @@ Esta wiki descreve como usar a superficie publica atual do monorepo Excelsior. O
 ## Estrutura
 
 - [01-primeiros-passos.md](./01-primeiros-passos.md)
-  - instalacao, scripts, escolha de pacote e exemplos minimos em core, vanilla, React e Vue
+  - instalacao, scripts, escolha de pacote e exemplos minimos em core e vanilla
 - [02-core-e-engine.md](./02-core-e-engine.md)
   - WorkbookEngine, formulas, historico, batch updates, validacao, conditional formatting, plugins, serializacao e eventos
 - [03-renderer-e-experiencia.md](./03-renderer-e-experiencia.md)
@@ -22,11 +22,7 @@ Esta wiki descreve como usar a superficie publica atual do monorepo Excelsior. O
 - `@excelsior/renderer-dom`
   - use quando voce quer a experiencia completa de planilha no DOM, incluindo toolbar, formula bar, viewport virtualizada, pivot panel e recursos de acessibilidade.
 - `@excelsior/vanilla`
-  - use quando a aplicacao nao esta em React ou Vue e voce quer montar a planilha diretamente em um elemento HTML.
-- `@excelsior/react`
-  - use quando voce quer um componente React fino em cima do wrapper vanilla.
-- `@excelsior/vue`
-  - use quando voce quer um componente Vue 3 fino em cima do wrapper vanilla.
+  - use quando voce quer montar a planilha diretamente em um elemento HTML, inclusive dentro de componentes de qualquer framework.
 - `@excelsior/formulas`
   - use quando voce quer o motor padrao de formulas seguras.
 - `@excelsior/xlsx`
@@ -36,7 +32,7 @@ Esta wiki descreve como usar a superficie publica atual do monorepo Excelsior. O
 
 ## Trilha recomendada
 
-1. Comece em [01-primeiros-passos.md](./01-primeiros-passos.md) para subir a stack local e decidir entre core puro, vanilla, React ou Vue.
+1. Comece em [01-primeiros-passos.md](./01-primeiros-passos.md) para subir a stack local e decidir entre core puro e vanilla.
 2. Leia [02-core-e-engine.md](./02-core-e-engine.md) para entender o contrato do workbook e as APIs publicas principais.
 3. Leia [03-renderer-e-experiencia.md](./03-renderer-e-experiencia.md) se voce vai expor a UI de planilha ao usuario final.
 4. Leia [04-dados-remotos-pivot-e-integracoes.md](./04-dados-remotos-pivot-e-integracoes.md) se voce vai usar grandes volumes, pivot, XLSX, devtools ou benchmark.

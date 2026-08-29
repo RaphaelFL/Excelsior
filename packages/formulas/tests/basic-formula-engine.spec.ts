@@ -55,6 +55,18 @@ describe("BasicFormulaEngine", () => {
     expect(result.value).toBe(16.35);
   });
 
+  it("evaluates common numeric spreadsheet functions", () => {
+    const result = engine.evaluate("=MEDIAN(1,9,3)+PRODUCT(2,3)+ROUNDUP(1.21,1)+ROUNDDOWN(1.29,1)+SQRT(9)+POWER(2,3)+MOD(7,4)+SIGN(-2)", {
+      currentCell: { row: 0, col: 0 },
+      currentSheetId: "sheet-1",
+      currentSheetName: "Sheet1",
+      getCell: () => undefined,
+      evaluateCell: () => ({ value: null })
+    });
+
+    expect(result.value).toBeCloseTo(24.5);
+  });
+
   it("accepts absolute references without breaking evaluation", () => {
     const values = new Map([
       ["0:0", 2],

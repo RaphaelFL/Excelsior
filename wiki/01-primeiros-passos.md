@@ -22,7 +22,6 @@ npm run release:check
 
 - Use `@excelsior/core` quando voce quer a engine sem UI.
 - Use `@excelsior/vanilla` quando voce quer a planilha pronta em um elemento DOM.
-- Use `@excelsior/react` ou `@excelsior/vue` quando voce quer o mesmo comportamento em wrappers declarativos.
 - Use `@excelsior/xlsx` para importacao/exportacao.
 - Use `@excelsior/devtools` para inspecionar eventos do workbook.
 
@@ -87,33 +86,6 @@ const instance = createSpreadsheet(host, {
 
 // quando desmontar
 instance.destroy();
-```
-
-## Exemplo minimo em React
-
-```tsx
-import { Spreadsheet } from "@excelsior/react";
-
-export const App = () => (
-  <Spreadsheet
-    data={[{ name: "Sheet1" }]}
-    localization={{
-      direction: "ltr"
-    }}
-    renderDebounceMs={8}
-  />
-);
-```
-
-## Exemplo minimo em Vue 3
-
-```ts
-import { Spreadsheet } from "@excelsior/vue";
-
-export default {
-  components: { Spreadsheet },
-  template: `<Spreadsheet :data="[{ name: 'Sheet1' }]" :renderDebounceMs="8" />`
-};
 ```
 
 ## Estrutura basica de workbook
