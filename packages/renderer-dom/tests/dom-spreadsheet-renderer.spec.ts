@@ -1646,6 +1646,30 @@ describe("DomSpreadsheetRenderer", () => {
     container.remove();
   });
 
+  it("keeps the full virtual surface scrollable after rendering a new window", () => {
+    const container = document.createElement("div");
+    container.style.width = "320px";
+    container.style.height = "240px";
+    document.body.append(container);
+
+    const engine = new WorkbookEngine(
+      { data: [{ rowCount: 300, columnCount: 20 }] },
+      new BasicFormulaEngine()
+    );
+    const renderer = new DomSpreadsheetRenderer(container, engine);
+    const viewport = container.querySelector<HTMLElement>(".excelsior-viewport")!;
+    const surface = container.querySelector<HTMLElement>(".excelsior-surface")!;
+
+    expect(Number.parseFloat(surface.style.height)).toBeGreaterThan(240);
+    expect(Number.parseFloat(surface.style.width)).toBeGreaterThan(320);
+    viewport.scrollTop = 1200;
+    viewport.dispatchEvent(new Event("scroll"));
+    expect(viewport.scrollTop).toBe(1200);
+
+    renderer.dispose();
+    container.remove();
+  });
+
   it("renders persistent split dividers and keeps both synchronized regions navigable", () => {
     const container = document.createElement("div");
     container.style.width = "320px";
@@ -3039,9 +3063,12 @@ describe("DomSpreadsheetRenderer", () => {
       expect(engine.getCell(sheetId, 2, 1)?.value).toBe("159");
 
       const initialWidth = Number.parseFloat(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.style.width);
+      const toolbar = container.querySelector<HTMLElement>(".excelsior-toolbar")!;
+      toolbar.scrollLeft = 480;
       container.querySelector<HTMLButtonElement>("[data-action='zoom-in']")!.click();
       const zoomedWidth = Number.parseFloat(container.querySelector<HTMLElement>("[data-row='0'][data-col='0']")!.style.width);
       expect(zoomedWidth).toBeGreaterThan(initialWidth);
+      expect(container.querySelector<HTMLElement>(".excelsior-toolbar")?.scrollLeft).toBe(480);
       expect(container.querySelector<HTMLButtonElement>("[data-action='zoom-reset']")?.textContent).toContain("110%");
       expect(container.querySelector<HTMLButtonElement>("[data-action='zoom-reset']")?.title).toBe("Zoom 110%");
 

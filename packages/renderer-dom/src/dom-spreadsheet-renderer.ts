@@ -5937,6 +5937,7 @@ export class DomSpreadsheetRenderer {
 
   private renderChrome(columnsToRender: number[]): void {
     const sheet = this.engine.getActiveSheet();
+    const toolbarScrollLeft = this.toolbar.scrollLeft;
     const selectionRange = this.getResolvedSelectionRange(sheet);
     const activeAddress = this.getActiveAddress(sheet);
     const fullSheetSelected =
@@ -6015,6 +6016,7 @@ export class DomSpreadsheetRenderer {
 
     fragment.append(this.renderToolbar(), headerRow);
     this.chrome.append(fragment);
+    this.toolbar.scrollLeft = toolbarScrollLeft;
   }
 
   private renderRowHeaders(
@@ -6460,6 +6462,8 @@ export class DomSpreadsheetRenderer {
     const viewportHeight = this.viewport.clientHeight || this.container.clientHeight || 480;
     const rowOffsets = buildOffsets(resolvedRowCount, (index) => this.getRowHeight(sheet, index));
     const colOffsets = buildOffsets(sheet.columnCount, (index) => this.getColumnWidth(sheet, index));
+    this.surface.style.width = `${ROW_HEADER_WIDTH + (colOffsets[colOffsets.length - 1] ?? 0)}px`;
+    this.surface.style.height = `${rowOffsets[rowOffsets.length - 1] ?? 0}px`;
     this.visualObjectSurfaceMetrics = {
       sheetId: sheet.id,
       rowOffsets,
