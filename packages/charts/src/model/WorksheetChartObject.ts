@@ -6,6 +6,7 @@ export type WorksheetChartType = TraceType | "column" | "unknown";
 export interface ChartRangeBinding {
   chartId: string;
   sheetId: string;
+  sourceSheetId?: string;
   rangeAddress: string;
   orientation: "rows" | "columns";
   firstRowAsHeader: boolean;
@@ -38,6 +39,7 @@ export interface WorksheetChartObject {
     borderWidth?: number;
     fontFamily?: string;
     professionalPreset?: "spreadsheet" | "report" | "dashboard";
+    displayMode?: "embedded" | "sheet";
   };
   state: {
     selected: boolean;
